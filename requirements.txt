@@ -1,0 +1,7 @@
+requests==2.25.1
+beautifulsoup4==4.9.3
+boto3==1.17.97
+tweepy==3.10.0
+python-dotenv==0.18.0
+zappa==0.53.0
+sentry_sdk==1.1.0
