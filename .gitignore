@@ -2,3 +2,5 @@
 .vscode
 .env
 cache.json
+feed-cache.json
+feed.xml
