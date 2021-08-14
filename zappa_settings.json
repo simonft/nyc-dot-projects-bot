@@ -1,6 +1,6 @@
 {
     "production": {
-        "app_function": "nyc_dot_bot.tweet",
+        "app_function": "nyc_dot_bot.run",
         "profile_name": "default",
         "project_name": "nyc-dot-bot",
         "runtime": "python3.8",

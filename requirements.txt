@@ -5,3 +5,4 @@ tweepy==3.10.0
 python-dotenv==0.18.0
 zappa==0.53.0
 sentry_sdk==1.1.0
+click==8.0.1
