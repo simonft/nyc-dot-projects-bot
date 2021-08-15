@@ -114,7 +114,7 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
     return successes
 
 
-def update_feed(local_cache, client, new_links):
+def update_feed(local_cache, client, dry_run, new_links):
     client = boto3.client("s3")
     feed_json = []
     cache_path = "feed-cache.json"
@@ -147,7 +147,7 @@ def update_feed(local_cache, client, new_links):
     fg.link(href=current_projects_url)
     fg.description("New PDFs posted to the NYC DOT's current projects page")
 
-    rss_links = feed_json[:10]
+    rss_links = feed_json[-10:]
     rss_links.reverse()
 
     for link in rss_links:
@@ -160,6 +160,9 @@ def update_feed(local_cache, client, new_links):
         )
 
     rss_string = fg.rss_str(pretty=True, encoding="unicode", xml_declaration=False)
+
+    if dry_run:
+        return
 
     if local_cache:
         with cache_path.open("w") as f:
@@ -197,7 +200,7 @@ def run(event=None, context=None, local_cache=None, dry_run=False, no_tweet=Fals
 
     successes = tweet_new_links(new_links, dry_run, no_tweet)
 
-    update_feed(local_cache, client, successes)
+    update_feed(local_cache, client, dry_run, successes)
 
     if dry_run:
         return
