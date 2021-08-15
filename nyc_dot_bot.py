@@ -17,7 +17,7 @@ import tweepy
 
 sentry_sdk.init(
     integrations=[AwsLambdaIntegration()],
-    traces_sample_rate=1.0,  # adjust the sample rate in production as needed
+    traces_sample_rate=1.0,
 )
 
 load_dotenv()
@@ -38,7 +38,7 @@ def get_html():
 
 
 def get_pdf_links(projects_html):
-    soup = BeautifulSoup(projects_html.text, "html.parser")
+    soup = BeautifulSoup(projects_html.text.encode("ISO-8859-1"), "html.parser")
     content = soup.find(class_="region-content")
     links = content.find_all("a")
 
