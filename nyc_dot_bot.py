@@ -34,11 +34,12 @@ class TooManyNewPDFsException(Exception):
 def get_html():
     projects_html = requests.get(current_projects_url)
     projects_html.raise_for_status()
+    projects_html.encoding = "utf-8"
     return projects_html
 
 
 def get_pdf_links(projects_html):
-    soup = BeautifulSoup(projects_html.text.encode("ISO-8859-1"), "html.parser")
+    soup = BeautifulSoup(projects_html.text, "html.parser")
     content = soup.find(class_="region-content")
     links = content.find_all("a")
 
