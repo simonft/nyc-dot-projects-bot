@@ -24,7 +24,7 @@ load_dotenv()
 
 current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml"
 
-bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects"
+bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot"
 
 
 class TooManyNewPDFsException(Exception):
@@ -155,7 +155,7 @@ def update_feed(local_cache, client, dry_run, new_links):
         fe = fg.add_entry()
         fe.id(link["link"])
         fe.link(href=link["link"])
-        fe.title(link["text"])
+        fe.title(link["text"].replace(" (pdf)", ""))
         fe.published(
             datetime.datetime.fromtimestamp(link["time"], tz=timezone("US/Eastern"))
         )
@@ -216,6 +216,10 @@ def run(event=None, context=None, local_cache=None, dry_run=False, no_tweet=Fals
             Key="cache.json",
             Body=json.dumps(cache),
         )
+
+
+def lambda_handler(event=None, context=None):
+    run()
 
 
 @click.command()

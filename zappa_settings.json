@@ -9,7 +9,7 @@
         "apigateway_enabled": false,
         "events": [
             {
-                "function": "nyc_dot_bot.tweet",
+                "function": "nyc_dot_bot.lambda_handler",
                 "expression": "rate(20 minutes)"
             }
         ],
