@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 import os
@@ -40,7 +41,7 @@ def get_html():
 
 def get_pdf_links(projects_html):
     soup = BeautifulSoup(projects_html.text, "html.parser")
-    content = soup.find(class_="region-content")
+    content = soup.find(class_="view-content")
     links = content.find_all("a")
 
     pdf_links = []
@@ -59,6 +60,30 @@ def get_local_cache(file_path):
     with open(file_path) as f:
         content = f.read()
         return json.loads(content)
+
+
+def get_pdf(link):
+    r = requests.get(link)
+    r.raise_for_status()
+    return r.content
+
+
+def convert_pdf_to_image(pdf):
+    instructions = {
+        "parts": [{"file": "document"}],
+        "output": {"type": "image", "format": "png", "width": 1200},
+    }
+
+    r = requests.request(
+        "POST",
+        "https://api.pspdfkit.com/build",
+        headers={"Authorization": f"Bearer {os.environ.get('PDF_LIVE_KEY')}"},
+        files={"document": pdf},
+        data={"instructions": json.dumps(instructions)},
+        stream=True,
+    )
+    r.raise_for_status()
+    return r.content
 
 
 def find_new_links(cached_links, current_links):
@@ -107,7 +132,9 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
             if dry_run or no_tweet:
                 print(f'Would have tweeted: "{tweet_text}"')
             else:
-                api.update_status(tweet_text)
+                image = convert_pdf_to_image(get_pdf(link["href"]))
+                media = api.media_upload(filename="", file=io.BytesIO(image))
+                api.update_status(tweet_text, media_ids=[media.media_id])
             successes[link["href"]] = link.text
     except Exception as e:
         sentry_sdk.capture_exception(e)
