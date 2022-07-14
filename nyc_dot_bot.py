@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import os
 import datetime
+from urllib.parse import urljoin
 
 import click
 import boto3
@@ -89,6 +90,10 @@ def convert_pdf_to_image(pdf):
 def find_new_links(cached_links, current_links):
     new_links = []
     for link in current_links:
+        link["href"] = urljoin(
+            "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml",
+            link["href"],
+        )
         if link["href"] not in cached_links:
             new_links.append(link)
 
@@ -124,8 +129,8 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
 
     # If any of these fail, we want to record the rest succeeded so
     # we don't tweet them again. We still want them to go to setry though.
-    try:
-        for link in links:
+    for link in links:
+        try:
             # link takes 23 chars and we want a space
             tweet_text = format_link_for_tweet(link)
 
@@ -136,8 +141,8 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                 media = api.media_upload(filename="", file=io.BytesIO(image))
                 api.update_status(tweet_text, media_ids=[media.media_id])
             successes[link["href"]] = link.text
-    except Exception as e:
-        sentry_sdk.capture_exception(e)
+        except Exception as e:
+            sentry_sdk.capture_exception(e)
 
     return successes
 
