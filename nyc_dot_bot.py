@@ -116,7 +116,8 @@ def format_link_for_tweet(link):
 
 
 def tweet_new_links(links, dry_run=False, no_tweet=False):
-    mastodon = Mastodon(access_token=os.environ.get("MASTODON_ACCESS_TOKEN"))
+    mastodon = Mastodon(api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
+                        access_token=os.environ.get("MASTODON_ACCESS_TOKEN"))
 
     successes = {}
 

@@ -20,6 +20,7 @@ jobs:
       SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
       MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
       PDF_LIVE_KEY: ${{ secrets.PDF_LIVE_KEY }}
+      MASTODON_API_BASE_URL: "https://overgrown.garden/"
     steps:
     - name: Check out this repo
       uses: actions/checkout@v2
