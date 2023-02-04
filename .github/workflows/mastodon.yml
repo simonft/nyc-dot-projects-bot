@@ -13,7 +13,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    en:
+    env:
       BUCKET_NAME: ${{ vars.BUCKET_NAME }}
     steps:
     - name: Check out this repo
