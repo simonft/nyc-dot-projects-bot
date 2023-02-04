@@ -1,7 +1,6 @@
 name: Get PDFs and post to Mastodon
 
 on:
-  push:
   workflow_dispatch:
   schedule:
     - cron:  '2/20 * * * *'
