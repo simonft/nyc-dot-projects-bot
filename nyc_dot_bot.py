@@ -134,7 +134,7 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                 image = convert_pdf_to_image(get_pdf(link["href"]))
                 mastodon_media = mastodon.media_post(
                     image,
-                    mime_type="image=png",
+                    mime_type="image/png",
                     description="Screenshot of first page of PDF. Auto posted so can't describe, sorry."
                 )
                 mastodon.status_post(tweet_text, media_ids=[mastodon_media["id"]])
