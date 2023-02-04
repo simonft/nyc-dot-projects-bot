@@ -13,6 +13,8 @@ jobs:
     permissions:
       id-token: write
       contents: read
+    en:
+      BUCKET_NAME: ${{ vars.BUCKET_NAME }}
     steps:
     - name: Check out this repo
       uses: actions/checkout@v2
