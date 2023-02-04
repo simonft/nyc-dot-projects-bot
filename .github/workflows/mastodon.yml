@@ -1,4 +1,4 @@
-Name: Get PDFs and post to Mastodon
+name: Get PDFs and post to Mastodon
 
 on:
   push:
