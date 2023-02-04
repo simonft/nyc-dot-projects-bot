@@ -132,7 +132,11 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                 print(f'Would have tweeted: "{tweet_text}"')
             else:
                 image = convert_pdf_to_image(get_pdf(link["href"]))
-                mastodon_media = mastodon.media_post(image, description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.")
+                mastodon_media = mastodon.media_post(
+                    image,
+                    mime_type="image=png",
+                    description="Screenshot of first page of PDF. Auto posted so can't describe, sorry."
+                )
                 mastodon.status_post(tweet_text, media_ids=[mastodon_media["id"]])
 
             successes[link["href"]] = link.text
