@@ -1,0 +1,16 @@
+Name: Get PDFs and post to Mastodon
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron:  '* * * * */20'
+
+jobs:
+  scheduled:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out this repo
+      uses: actions/checkout@v2
+    - name: Fetch latest data
+      run: echo "test"
