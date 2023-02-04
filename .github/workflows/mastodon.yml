@@ -16,16 +16,14 @@ jobs:
     - name: Check out this repo
       uses: actions/checkout@v2
 
-    - name: createa a file
-      run: echo "test" > file.txt
-
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1-node16
       with:
         role-to-assume: arn:aws:iam::820960796304:role/nyc-dot-projects-github
         aws-region: us-east-1
 
-    - name: Copy files to the test website with the AWS CLI
-      run: |
-        aws s3 cp file.txt s3://nyc-dot-current-projects-bot-mastodon-staging/
+    - uses: actions/setup-python@v4
+      with:
+        python-version: '3.11' 
+
+    - run: python nyc_dot_bot.py --dry-run
