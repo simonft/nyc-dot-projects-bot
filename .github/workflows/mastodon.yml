@@ -38,4 +38,4 @@ jobs:
 
     - run: pip install -r requirements.txt
 
-    - run: python nyc_dot_bot.py --dry-run
+    - run: python nyc_dot_bot.py
