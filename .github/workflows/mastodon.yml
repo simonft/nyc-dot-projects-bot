@@ -9,6 +9,7 @@ on:
 jobs:
   scheduled:
     runs-on: ubuntu-latest
+    environment: Staging
     permissions:
       id-token: write
       contents: read
