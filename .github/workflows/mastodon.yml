@@ -12,5 +12,17 @@ jobs:
     steps:
     - name: Check out this repo
       uses: actions/checkout@v2
-    - name: Fetch latest data
-      run: echo "test"
+
+    - name: createa a file
+      run: echo "test" > file.txt
+
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1-node16
+      with:
+        role-to-assume: arn:aws:iam::820960796304:role/nyc-dot-projects-github
+        aws-region: us-east-1
+
+    - name: Copy files to the test website with the AWS CLI
+      run: |
+        aws s3 cp file.txt s3://nyc-dot-current-projects-bot-mastodon-staging/
