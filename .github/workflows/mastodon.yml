@@ -9,6 +9,9 @@ on:
 jobs:
   scheduled:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
     - name: Check out this repo
       uses: actions/checkout@v2
