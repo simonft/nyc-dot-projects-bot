@@ -10,6 +10,7 @@ import boto3
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from feedgen.feed import FeedGenerator
+from mastodon import Mastodon
 from pytz import timezone
 import requests
 import sentry_sdk
@@ -26,7 +27,7 @@ load_dotenv()
 
 current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml"
 
-bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot"
+bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon"
 
 
 class TooManyNewPDFsException(Exception):
@@ -115,15 +116,7 @@ def format_link_for_tweet(link):
 
 
 def tweet_new_links(links, dry_run=False, no_tweet=False):
-    auth = tweepy.OAuthHandler(
-        os.environ.get("TWITTER_CONSUMER_KEY"),
-        os.environ.get("TWITTER_CONSUMER_SECRET"),
-    )
-    auth.set_access_token(
-        os.environ.get("TWITTER_ACCESS_TOKEN"),
-        os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
-    )
-    api = tweepy.API(auth)
+    mastodon = Mastodon(access_token=os.environ.get("MASTODON_ACCESS_TOKEN"))
 
     successes = {}
 
@@ -138,8 +131,9 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                 print(f'Would have tweeted: "{tweet_text}"')
             else:
                 image = convert_pdf_to_image(get_pdf(link["href"]))
-                media = api.media_upload(filename="", file=io.BytesIO(image))
-                api.update_status(tweet_text, media_ids=[media.media_id])
+                mastodon_media = Mastodon.media_post(image, description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.")
+                mastodon.status_post(tweet_text, media_ids=[mastodon_media["id"]])
+
             successes[link["href"]] = link.text
         except Exception as e:
             sentry_sdk.capture_exception(e)
