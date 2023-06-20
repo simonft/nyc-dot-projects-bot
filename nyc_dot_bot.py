@@ -26,7 +26,9 @@ load_dotenv()
 
 current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml"
 
-bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon-staging"
+bucket_name = (
+    os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon-staging"
+)
 
 
 class TooManyNewPDFsException(Exception):
@@ -71,8 +73,8 @@ def get_pdf(link):
 
 def convert_pdf_to_image(pdf):
     buf = io.BytesIO()
-    convert_from_bytes(pdf)[0].save(buf, format='JPEG')
-    return buf
+    convert_from_bytes(pdf)[0].save(buf, format="JPEG")
+    return buf.read()
 
 
 def find_new_links(cached_links, current_links):
@@ -103,8 +105,10 @@ def format_link_for_tweet(link):
 
 
 def tweet_new_links(links, dry_run=False, no_tweet=False):
-    mastodon = Mastodon(api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
-                        access_token=os.environ.get("MASTODON_ACCESS_TOKEN"))
+    mastodon = Mastodon(
+        api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
+        access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
+    )
 
     successes = {}
 
@@ -122,7 +126,7 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                 mastodon_media = mastodon.media_post(
                     image,
                     mime_type="image/png",
-                    description="Screenshot of first page of PDF. Auto posted so can't describe, sorry."
+                    description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
                 )
                 mastodon.status_post(tweet_text, media_ids=[mastodon_media["id"]])
 
