@@ -35,7 +35,7 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - run: apt instaltl -y poppler-utils
+      - run: apt install -y poppler-utils
 
       - run: pip install -r requirements.txt
 
