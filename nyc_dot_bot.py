@@ -1,4 +1,3 @@
-import io
 import json
 from pathlib import Path
 import os
@@ -11,15 +10,14 @@ from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from feedgen.feed import FeedGenerator
 from mastodon import Mastodon
+from pdf2image import convert_from_bytes
 from pytz import timezone
 import requests
 import sentry_sdk
-from sentry_sdk.integrations.aws_lambda import AwsLambdaIntegration
 import tweepy
 
 
 sentry_sdk.init(
-    integrations=[AwsLambdaIntegration()],
     traces_sample_rate=1.0,
 )
 
@@ -27,7 +25,7 @@ load_dotenv()
 
 current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml"
 
-bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon"
+bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon-staging"
 
 
 class TooManyNewPDFsException(Exception):
@@ -71,28 +69,14 @@ def get_pdf(link):
 
 
 def convert_pdf_to_image(pdf):
-    instructions = {
-        "parts": [{"file": "document"}],
-        "output": {"type": "image", "format": "png", "width": 1200},
-    }
-
-    r = requests.request(
-        "POST",
-        "https://api.pspdfkit.com/build",
-        headers={"Authorization": f"Bearer {os.environ.get('PDF_LIVE_KEY')}"},
-        files={"document": pdf},
-        data={"instructions": json.dumps(instructions)},
-        stream=True,
-    )
-    r.raise_for_status()
-    return r.content
+    return convert_from_bytes(pdf)[0]
 
 
 def find_new_links(cached_links, current_links):
     new_links = []
     for link in current_links:
         link["href"] = urljoin(
-            "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml",
+            current_projects_url,
             link["href"],
         )
         if link["href"] not in cached_links:
