@@ -1,3 +1,4 @@
+import io
 import json
 from pathlib import Path
 import os
@@ -69,7 +70,9 @@ def get_pdf(link):
 
 
 def convert_pdf_to_image(pdf):
-    return convert_from_bytes(pdf)[0]
+    buf = io.BytesIO()
+    convert_from_bytes(pdf)[0].save(buf, format='JPEG')
+    return buf
 
 
 def find_new_links(cached_links, current_links):
