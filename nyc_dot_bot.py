@@ -74,6 +74,7 @@ def get_pdf(link):
 def convert_pdf_to_image(pdf):
     buf = io.BytesIO()
     convert_from_bytes(pdf)[0].save(buf, format="JPEG")
+    buf.seek(0)
     return buf.read()
 
 
