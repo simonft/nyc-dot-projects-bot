@@ -1,18 +1,15 @@
+from enum import Enum, auto
 import io
 import json
-from pathlib import Path
 import os
-import datetime
 from urllib.parse import urljoin
 
 import click
 import boto3
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
-from feedgen.feed import FeedGenerator
 from mastodon import Mastodon
 from pdf2image import convert_from_bytes
-from pytz import timezone
 import requests
 import sentry_sdk
 import tweepy
@@ -29,6 +26,14 @@ current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-project
 bucket_name = (
     os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon-staging"
 )
+
+
+class Platform(Enum):
+    MASTODON = auto()
+    TWITTER = auto()
+
+
+PLATFORM = Platform.TWITTER if os.environ.get("TWITTER_CONSUMER_KEY") else Platform.MASTODON
 
 
 class TooManyNewPDFsException(Exception):
@@ -75,7 +80,7 @@ def convert_pdf_to_image(pdf):
     buf = io.BytesIO()
     convert_from_bytes(pdf)[0].save(buf, format="JPEG")
     buf.seek(0)
-    return buf.read()
+    return buf
 
 
 def find_new_links(cached_links, current_links):
@@ -89,7 +94,7 @@ def find_new_links(cached_links, current_links):
             new_links.append(link)
 
     # prevent tweeting too many
-    if len(new_links) > 15:
+    if len(new_links) > 1500:
         raise TooManyNewPDFsException
 
     return new_links
@@ -106,105 +111,57 @@ def format_link_for_tweet(link):
 
 
 def tweet_new_links(links, dry_run=False, no_tweet=False):
-    mastodon = Mastodon(
-        api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
-        access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
-    )
-
     successes = {}
 
+    if PLATFORM is Platform.TWITTER:
+        auth = tweepy.OAuth1UserHandler(
+            os.environ.get("TWITTER_CONSUMER_KEY"),
+            os.environ.get("TWITTER_CONSUMER_SECRET"),
+            os.environ.get("TWITTER_ACCESS_TOKEN"),
+            os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
+        )
+        twitter_client_v1 = tweepy.API(auth)
+        twitter_client_v2 = tweepy.Client(
+            consumer_key=os.environ.get("TWITTER_CONSUMER_KEY"),
+            consumer_secret=os.environ.get("TWITTER_CONSUMER_SECRET"),
+            access_token=os.environ.get("TWITTER_ACCESS_TOKEN"),
+            access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
+        )
+    else:
+        mastodon_client = Mastodon(
+            api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
+            access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
+        )
+
     # If any of these fail, we want to record the rest succeeded so
-    # we don't tweet them again. We still want them to go to setry though.
+    # we don't tweet them again. We still want them to go to sentry though.
     for link in links:
         try:
             # link takes 23 chars and we want a space
             tweet_text = format_link_for_tweet(link)
-
+            image_buf = convert_pdf_to_image(get_pdf(link["href"]))
+            
             if dry_run or no_tweet:
                 print(f'Would have tweeted: "{tweet_text}"')
             else:
-                image = convert_pdf_to_image(get_pdf(link["href"]))
-                mastodon_media = mastodon.media_post(
-                    image,
-                    mime_type="image/png",
-                    description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
-                )
-                mastodon.status_post(tweet_text, media_ids=[mastodon_media["id"]])
+                if PLATFORM is Platform.TWITTER:
+                    media = twitter_client_v1.media_upload(filename="", file=image_buf)
+                    twitter_client_v2.create_tweet(text=tweet_text, media_ids=[media.media_id])
+                else:
+                    image = image_buf.read()
+                    mastodon_media = mastodon_client.media_post(
+                        image,
+                        mime_type="image/png",
+                        description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
+                    )
+                    mastodon_client.status_post(tweet_text, media_ids=[mastodon_media["id"]])
 
             successes[link["href"]] = link.text
         except Exception as e:
             sentry_sdk.capture_exception(e)
+            print(e)
 
     return successes
-
-
-def update_feed(local_cache, client, dry_run, new_links):
-    client = boto3.client("s3")
-    feed_json = []
-    cache_path = "feed-cache.json"
-    if local_cache:
-        cache_path = Path(local_cache).parent / cache_path
-        try:
-            with cache_path.open() as f:
-                feed_json = json.loads(f.read())
-        except FileNotFoundError:
-            pass
-    else:
-        try:
-            feed_json = get_s3_cache(client, key=cache_path)
-        # We exepect the path to be there, but it won't the first time.
-        except client.exceptions.NoSuchKey as e:
-            sentry_sdk.capture_exception(e)
-
-    for link, text in new_links.items():
-        feed_json.append(
-            {
-                "link": link,
-                "text": text,
-                "time": int(datetime.datetime.now().timestamp()),
-            }
-        )
-
-    fg = FeedGenerator()
-    fg.id(current_projects_url)
-    fg.title("NYC DOT New Projects (unofficial)")
-    fg.link(href=current_projects_url)
-    fg.description("New PDFs posted to the NYC DOT's current projects page")
-
-    rss_links = feed_json[-10:]
-    rss_links.reverse()
-
-    for link in rss_links:
-        fe = fg.add_entry()
-        fe.id(link["link"])
-        fe.link(href=link["link"])
-        fe.title(link["text"].replace(" (pdf)", ""))
-        fe.published(
-            datetime.datetime.fromtimestamp(link["time"], tz=timezone("US/Eastern"))
-        )
-
-    rss_string = fg.rss_str(pretty=True, encoding="unicode", xml_declaration=False)
-
-    if dry_run:
-        return
-
-    if local_cache:
-        with cache_path.open("w") as f:
-            f.write(json.dumps(feed_json))
-        with (Path(local_cache).parent / Path("feed.rss")).open("w") as f:
-            f.write(rss_string)
-    else:
-        client.put_object(
-            Bucket=bucket_name,
-            Key=cache_path,
-            Body=json.dumps(feed_json),
-        )
-        client.put_object(
-            Bucket=bucket_name,
-            Key="feed.xml",
-            Body=rss_string,
-            ACL="public-read",
-        )
 
 
 def run(event=None, context=None, local_cache=None, dry_run=False, no_tweet=False):
@@ -223,8 +180,6 @@ def run(event=None, context=None, local_cache=None, dry_run=False, no_tweet=Fals
         return
 
     successes = tweet_new_links(new_links, dry_run, no_tweet)
-
-    update_feed(local_cache, client, dry_run, successes)
 
     if dry_run:
         return

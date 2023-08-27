@@ -1,4 +1,4 @@
-name: Get PDFs and post to Mastodon
+name: Get PDFs and post to Twitter
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
 jobs:
   scheduled:
     runs-on: ubuntu-latest
-    environment: Staging
+    environment: Production Twitter
     permissions:
       id-token: write
       contents: read
@@ -17,9 +17,10 @@ jobs:
       SENTRY_DSN: ${{ vars.SENTRY_DSN }}
       SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT }}
       SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
-      MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
-      PDF_LIVE_KEY: ${{ secrets.PDF_LIVE_KEY }}
-      MASTODON_API_BASE_URL: "https://overgrown.garden/"
+      TWITTER_CONSUMER_KEY: ${{ vars.TWITTER_CONSUMER_KEY }}
+      TWITTER_CONSUMER_SECRET: ${{ secrets.TWITTER_CONSUMER_SECRET }}
+      TWITTER_ACCESS_TOKEN: ${{ vars.TWITTER_ACCESS_TOKEN }}
+      TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
     steps:
       - name: Check out this repo
         uses: actions/checkout@v2
