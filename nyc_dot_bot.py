@@ -78,7 +78,9 @@ def get_pdf(link):
 
 def convert_pdf_to_image(pdf):
     buf = io.BytesIO()
-    convert_from_bytes(pdf)[0].save(buf, format="JPEG")
+    image = convert_from_bytes(pdf)[0]
+    image.thumbnail((4096,4096))
+    image.save(buf, format="JPEG")
     buf.seek(0)
     return buf
 
