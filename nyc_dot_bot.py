@@ -2,8 +2,10 @@ from enum import Enum, auto
 import io
 import json
 import os
+import traceback
 from urllib.parse import urljoin
 
+from atproto import Client, models
 import click
 import boto3
 from dotenv import load_dotenv
@@ -31,9 +33,15 @@ bucket_name = (
 class Platform(Enum):
     MASTODON = auto()
     TWITTER = auto()
+    BLUESKY = auto()
 
 
-PLATFORM = Platform.TWITTER if os.environ.get("TWITTER_CONSUMER_KEY") else Platform.MASTODON
+PLATFORM = Platform.MASTODON
+
+if os.environ.get("TWITTER_CONSUMER_KEY"):
+    PLATFORM = Platform.TWITTER
+elif os.environ.get("BLUESKY_USERNAME"):
+    PLATFORM = Platform.BLUESKY
 
 
 class TooManyNewPDFsException(Exception):
@@ -79,7 +87,7 @@ def get_pdf(link):
 def convert_pdf_to_image(pdf):
     buf = io.BytesIO()
     image = convert_from_bytes(pdf)[0]
-    image.thumbnail((4096,4096))
+    image.thumbnail((2048,2048))
     image.save(buf, format="JPEG")
     buf.seek(0)
     return buf
@@ -111,6 +119,15 @@ def format_link_for_tweet(link):
 
     return f"{link_text} {link['href']}"
 
+def format_link_for_skeet(link):
+    max_length = 300 - 1
+    link_text = link.text
+    link_text = link_text.replace(" (pdf)", "")
+    if len(link_text) >= max_length:
+        link_text = f"{link_text[max_length-3]}..."
+
+    return link_text
+
 
 def tweet_new_links(links, dry_run=False, no_tweet=False):
     successes = {}
@@ -129,6 +146,9 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
             access_token=os.environ.get("TWITTER_ACCESS_TOKEN"),
             access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
         )
+    elif PLATFORM is Platform.BLUESKY:
+        bsky_client = Client()
+        bsky_client.login(os.environ.get("BLUESKY_USERNAME"), os.environ.get("BLUESKY_APP_PASSWORD"))
     else:
         mastodon_client = Mastodon(
             api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
@@ -149,6 +169,34 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                 if PLATFORM is Platform.TWITTER:
                     media = twitter_client_v1.media_upload(filename="", file=image_buf)
                     twitter_client_v2.create_tweet(text=tweet_text, media_ids=[media.media_id])
+                elif PLATFORM is Platform.BLUESKY:
+                    skeet_text = format_link_for_skeet(link)
+                    
+                    image = image_buf.read()
+                    upload = bsky_client.com.atproto.repo.upload_blob(image)
+                    images = [models.AppBskyEmbedImages.Image(
+                        alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
+                        image=upload.blob
+                    )]
+                    embed = models.AppBskyEmbedImages.Main(images=images)
+
+                    facets = [
+                        models.AppBskyRichtextFacet.Main(
+                            features=[models.AppBskyRichtextFacet.Link(uri=link['href'])],
+                            # links all the text in the skeet
+                            index=models.AppBskyRichtextFacet.ByteSlice(byte_start=0, byte_end=len(skeet_text.encode('UTF-8'))),
+                        )
+                    ]
+
+                    bsky_client.com.atproto.repo.create_record(
+                        models.ComAtprotoRepoCreateRecord.Data(
+                            repo=bsky_client.me.did,
+                            collection=models.ids.AppBskyFeedPost,
+                            record=models.AppBskyFeedPost.Main(
+                                created_at=bsky_client.get_current_time_iso(), text=skeet_text, facets=facets, embed=embed
+                            ),
+                        )
+                    )
                 else:
                     image = image_buf.read()
                     mastodon_media = mastodon_client.media_post(
@@ -162,6 +210,7 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
         except Exception as e:
             sentry_sdk.capture_exception(e)
             print(e)
+            traceback.print_exc()
 
     return successes
 

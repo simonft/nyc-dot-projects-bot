@@ -1,0 +1,41 @@
+name: Get PDFs and post to Bluesky
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "2/20 * * * *"
+
+jobs:
+  scheduled:
+    runs-on: ubuntu-latest
+    environment: Production Bluesky
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      BUCKET_NAME: ${{ vars.BUCKET_NAME }}
+      SENTRY_DSN: ${{ vars.SENTRY_DSN }}
+      SENTRY_ENVIRONMENT: ${{ vars.SENTRY_ENVIRONMENT }}
+      SENTRY_TRACES_SAMPLE_RATE: ${{ vars.SENTRY_TRACES_SAMPLE_RATE }}
+      BLUESKY_USERNAME: ${{ vars.BLUESKY_USERNAME }}
+      BLUESKY_APP_PASSWORD: ${{ secrets.BLUESKY_APP_PASSWORD }}
+    steps:
+      - name: Check out this repo
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          role-to-assume: arn:aws:iam::820960796304:role/nyc-dot-projects-github
+          aws-region: us-east-1
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: sudo apt update && sudo apt install -y poppler-utils
+
+      - run: pip install -r requirements.txt
+
+      - run: python nyc_dot_bot.py
