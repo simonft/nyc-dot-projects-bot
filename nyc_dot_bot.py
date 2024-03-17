@@ -5,7 +5,7 @@ import os
 import traceback
 from urllib.parse import urljoin
 
-from atproto import Client, models
+from atproto import Client, client_utils
 import click
 import boto3
 from dotenv import load_dotenv
@@ -119,7 +119,7 @@ def format_link_for_tweet(link):
 
     return f"{link_text} {link['href']}"
 
-def format_link_for_skeet(link):
+def truncate_text_for_skeet(link):
     max_length = 300 - 1
     link_text = link.text
     link_text = link_text.replace(" (pdf)", "")
@@ -170,32 +170,15 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                     media = twitter_client_v1.media_upload(filename="", file=image_buf)
                     twitter_client_v2.create_tweet(text=tweet_text, media_ids=[media.media_id])
                 elif PLATFORM is Platform.BLUESKY:
-                    skeet_text = format_link_for_skeet(link)
-                    
                     image = image_buf.read()
-                    upload = bsky_client.com.atproto.repo.upload_blob(image)
-                    images = [models.AppBskyEmbedImages.Image(
-                        alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
-                        image=upload.blob
-                    )]
-                    embed = models.AppBskyEmbedImages.Main(images=images)
 
-                    facets = [
-                        models.AppBskyRichtextFacet.Main(
-                            features=[models.AppBskyRichtextFacet.Link(uri=link['href'])],
-                            # links all the text in the skeet
-                            index=models.AppBskyRichtextFacet.ByteSlice(byte_start=0, byte_end=len(skeet_text.encode('UTF-8'))),
-                        )
-                    ]
-
-                    bsky_client.com.atproto.repo.create_record(
-                        models.ComAtprotoRepoCreateRecord.Data(
-                            repo=bsky_client.me.did,
-                            collection=models.ids.AppBskyFeedPost,
-                            record=models.AppBskyFeedPost.Main(
-                                created_at=bsky_client.get_current_time_iso(), text=skeet_text, facets=facets, embed=embed
-                            ),
-                        )
+                    bsky_client.send_image(
+                        text=client_utils.TextBuilder().link(
+                            truncate_text_for_skeet(link),
+                            link['href'],
+                        ),
+                        image=image,
+                        image_alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry."
                     )
                 else:
                     image = image_buf.read()
