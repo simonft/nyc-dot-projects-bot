@@ -22,22 +22,16 @@ jobs:
       TWITTER_ACCESS_TOKEN: ${{ vars.TWITTER_ACCESS_TOKEN }}
       TWITTER_ACCESS_TOKEN_SECRET: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}
     steps:
-      - name: Check out this repo
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1-node16
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::820960796304:role/nyc-dot-projects-github
           aws-region: us-east-1
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.11"
-          cache: pip
+      - uses: astral-sh/setup-uv@v6
 
       - run: sudo apt update && sudo apt install -y poppler-utils
 
-      - run: pip install -r requirements.txt
-
-      - run: python nyc_dot_bot.py
+      - run: uv run nyc-dot-bot
