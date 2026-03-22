@@ -1,21 +1,20 @@
-from enum import Enum, auto
 import io
 import json
 import os
 import traceback
+from enum import Enum, auto
 from urllib.parse import urljoin
 
-from atproto import Client, client_utils
-import click
 import boto3
-from dotenv import load_dotenv
-from bs4 import BeautifulSoup
-from mastodon import Mastodon
-from pdf2image import convert_from_bytes
+import click
 import requests
 import sentry_sdk
 import tweepy
-
+from atproto import Client, client_utils
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+from mastodon import Mastodon
+from pdf2image import convert_from_bytes
 
 sentry_sdk.init(
     traces_sample_rate=1.0,
@@ -25,9 +24,7 @@ load_dotenv()
 
 current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml"
 
-bucket_name = (
-    os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon-staging"
-)
+bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon-staging"
 
 
 class Platform(Enum):
@@ -87,7 +84,7 @@ def get_pdf(link):
 def convert_pdf_to_image(pdf):
     buf = io.BytesIO()
     image = convert_from_bytes(pdf)[0]
-    image.thumbnail((2048,2048))
+    image.thumbnail((2048, 2048))
     image.save(buf, format="JPEG")
     buf.seek(0)
     return buf
@@ -115,16 +112,17 @@ def format_link_for_tweet(link):
     link_text = link.text
     link_text = link_text.replace(" (pdf)", "")
     if len(link_text) >= max_length:
-        link_text = f"{link_text[max_length-3]}..."
+        link_text = f"{link_text[max_length - 3]}..."
 
     return f"{link_text} {link['href']}"
+
 
 def truncate_text_for_skeet(link):
     max_length = 300 - 1
     link_text = link.text
     link_text = link_text.replace(" (pdf)", "")
     if len(link_text) >= max_length:
-        link_text = f"{link_text[max_length-3]}..."
+        link_text = f"{link_text[max_length - 3]}..."
 
     return link_text
 
@@ -162,7 +160,7 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
             # link takes 23 chars and we want a space
             tweet_text = format_link_for_tweet(link)
             image_buf = convert_pdf_to_image(get_pdf(link["href"]))
-            
+
             if dry_run or no_tweet:
                 print(f'Would have tweeted: "{tweet_text}"')
             else:
@@ -175,10 +173,10 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                     bsky_client.send_image(
                         text=client_utils.TextBuilder().link(
                             truncate_text_for_skeet(link),
-                            link['href'],
+                            link["href"],
                         ),
                         image=image,
-                        image_alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry."
+                        image_alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
                     )
                 else:
                     image = image_buf.read()
@@ -237,9 +235,7 @@ def lambda_handler(event=None, context=None):
 @click.command()
 @click.option("--dry-run", is_flag=True)
 @click.option("--no-tweet", is_flag=True, help="Updates the cache without tweeting")
-@click.option(
-    "--local-cache", default=None, type=click.Path(dir_okay=False, writable=True)
-)
+@click.option("--local-cache", default=None, type=click.Path(dir_okay=False, writable=True))
 def cli(dry_run, local_cache, no_tweet):
     run(local_cache=local_cache, dry_run=dry_run, no_tweet=no_tweet)
 

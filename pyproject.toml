@@ -20,5 +20,14 @@ dependencies = [
 [project.scripts]
 nyc-dot-bot = "nyc_dot_bot:cli"
 
-[tool.flake8]
-max-line-length = 140
+[dependency-groups]
+dev = [
+    "ruff",
+    "ty",
+]
+
+[tool.ruff]
+line-length = 140
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
