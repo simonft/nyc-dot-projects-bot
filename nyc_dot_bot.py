@@ -77,12 +77,12 @@ class Platform(Enum):
     BLUESKY = auto()
 
 
-PLATFORM = Platform.MASTODON
-
-if os.environ.get("TWITTER_CONSUMER_KEY"):
-    PLATFORM = Platform.TWITTER
-elif os.environ.get("BLUESKY_USERNAME"):
-    PLATFORM = Platform.BLUESKY
+def _get_platform() -> Platform:
+    if os.environ.get("TWITTER_CONSUMER_KEY"):
+        return Platform.TWITTER
+    elif os.environ.get("BLUESKY_USERNAME"):
+        return Platform.BLUESKY
+    return Platform.MASTODON
 
 
 class TooManyNewPDFsException(Exception):
@@ -158,10 +158,10 @@ def truncate_text_for_skeet(link: Tag) -> str:
     return link_text
 
 
-def tweet_new_links(links: list[Tag], dry_run: bool = False, no_tweet: bool = False) -> dict[str, str]:
+def tweet_new_links(links: list[Tag], platform: Platform, dry_run: bool = False, no_tweet: bool = False) -> dict[str, str]:
     successes: dict[str, str] = {}
 
-    if PLATFORM is Platform.TWITTER:
+    if platform is Platform.TWITTER:
         auth = tweepy.OAuth1UserHandler(
             os.environ.get("TWITTER_CONSUMER_KEY"),
             os.environ.get("TWITTER_CONSUMER_SECRET"),
@@ -175,7 +175,7 @@ def tweet_new_links(links: list[Tag], dry_run: bool = False, no_tweet: bool = Fa
             access_token=os.environ.get("TWITTER_ACCESS_TOKEN"),
             access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
         )
-    elif PLATFORM is Platform.BLUESKY:
+    elif platform is Platform.BLUESKY:
         bsky_client = Client()
         bsky_client.login(os.environ.get("BLUESKY_USERNAME"), os.environ.get("BLUESKY_APP_PASSWORD"))
     else:
@@ -195,10 +195,10 @@ def tweet_new_links(links: list[Tag], dry_run: bool = False, no_tweet: bool = Fa
             if dry_run or no_tweet:
                 print(f'Would have tweeted: "{tweet_text}"')
             else:
-                if PLATFORM is Platform.TWITTER:
+                if platform is Platform.TWITTER:
                     media = twitter_client_v1.media_upload(filename="", file=image_buf)
                     twitter_client_v2.create_tweet(text=tweet_text, media_ids=[media.media_id])
-                elif PLATFORM is Platform.BLUESKY:
+                elif platform is Platform.BLUESKY:
                     image = image_buf.read()
 
                     bsky_client.send_image(
@@ -236,7 +236,7 @@ def run(cache_path: str, dry_run: bool = False, no_tweet: bool = False) -> None:
     if not new_links:
         return
 
-    successes = tweet_new_links(new_links, dry_run, no_tweet)
+    successes = tweet_new_links(new_links, _get_platform(), dry_run, no_tweet)
 
     if dry_run:
         return
