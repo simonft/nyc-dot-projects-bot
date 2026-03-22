@@ -36,6 +36,9 @@ package = true
 [tool.uv.build-backend]
 module-root = ""
 
+[tool.pytest.ini_options]
+markers = ["integration: hits external services"]
+
 [tool.ruff]
 line-length = 140
 

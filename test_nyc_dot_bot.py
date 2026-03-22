@@ -1,4 +1,5 @@
 import json
+import random
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +18,7 @@ from nyc_dot_bot import (
     cli,
     find_new_links,
     format_link_for_tweet,
+    get_html,
     get_pdf_links,
     make_cache,
     parse_s3_path,
@@ -384,3 +386,31 @@ def test_cli_defaults_to_s3(mock_run, monkeypatch):
         dry_run=True,
         no_tweet=False,
     )
+
+
+# --- integration ---
+
+
+@pytest.mark.integration
+def test_detects_removed_link_from_cache(tmp_path):
+    html = get_html()
+    all_links = get_pdf_links(html)
+    assert len(all_links) > 0, "Expected at least one PDF link on the page"
+
+    # Build a full cache from all current links
+    cached = {}
+    for link in find_new_links({}, all_links):
+        cached[link["href"]] = link.text
+
+    # Remove one link at random
+    removed_url = random.choice(list(cached.keys()))
+    cached.pop(removed_url)
+
+    # Re-fetch and find new links against the modified cache
+    html = get_html()
+    new_links = find_new_links(cached, get_pdf_links(html))
+
+    new_urls = [link["href"] for link in new_links]
+    assert removed_url in new_urls
+    # All new links should point to the one URL we removed
+    assert all(url == removed_url for url in new_urls)
