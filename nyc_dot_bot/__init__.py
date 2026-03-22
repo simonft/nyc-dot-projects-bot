@@ -109,9 +109,9 @@ class TwitterPoster(PlatformPoster):
         )
 
     def post(self, link: Tag, image_buf: io.BytesIO) -> None:
-        tweet_text = format_link_for_tweet(link)
+        post_text = format_link_for_post(link)
         media = self.client_v1.media_upload(filename="", file=image_buf)
-        self.client_v2.create_tweet(text=tweet_text, media_ids=[media.media_id])
+        self.client_v2.create_tweet(text=post_text, media_ids=[media.media_id])
 
 
 class BlueskyPoster(PlatformPoster):
@@ -138,14 +138,14 @@ class MastodonPoster(PlatformPoster):
         )
 
     def post(self, link: Tag, image_buf: io.BytesIO) -> None:
-        tweet_text = format_link_for_tweet(link)
+        post_text = format_link_for_post(link)
         image = image_buf.read()
         mastodon_media = self.client.media_post(
             image,
             mime_type="image/jpeg",
             description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
         )
-        self.client.status_post(tweet_text, media_ids=[mastodon_media["id"]])
+        self.client.status_post(post_text, media_ids=[mastodon_media["id"]])
 
 
 def _make_poster() -> PlatformPoster:
@@ -204,7 +204,7 @@ def find_new_links(cached: CacheData, current_links: list[Tag]) -> list[Tag]:
             link["href"] = resolved
             new_links.append(link)
 
-    # prevent tweeting too many
+    # prevent posting too many
     if len(new_links) > 15:
         raise TooManyNewPDFsException
 
@@ -216,7 +216,7 @@ def _clean_link_text(link: Tag) -> str:
     return text.replace(" (pdf)", "")
 
 
-def format_link_for_tweet(link: Tag) -> str:
+def format_link_for_post(link: Tag) -> str:
     max_length = 280 - 23 - 1
     link_text = _clean_link_text(link)
     if len(link_text) >= max_length:
@@ -234,19 +234,19 @@ def truncate_text_for_skeet(link: Tag) -> str:
     return link_text
 
 
-def tweet_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> dict[str, str]:
+def post_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> dict[str, str]:
     successes: dict[str, str] = {}
 
     # If any of these fail, we want to record the rest succeeded so
-    # we don't tweet them again. We still want them to go to sentry though.
+    # we don't post them again. We still want them to go to sentry though.
     for link in links:
         try:
             href = str(link["href"])
             image_buf = convert_pdf_to_image(get_pdf(href))
 
             if poster is None:
-                tweet_text = format_link_for_tweet(link)
-                print(f'Would have tweeted: "{tweet_text}"')
+                post_text = format_link_for_post(link)
+                print(f'Would have posted: "{post_text}"')
             else:
                 poster.post(link, image_buf)
 
@@ -261,7 +261,7 @@ def tweet_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> d
     return successes
 
 
-def run(cache_path: str, dry_run: bool = False, no_tweet: bool = False) -> None:
+def run(cache_path: str, dry_run: bool = False, no_post: bool = False) -> None:
     cache = make_cache(cache_path)
     cached = cache.read()
 
@@ -270,8 +270,8 @@ def run(cache_path: str, dry_run: bool = False, no_tweet: bool = False) -> None:
     if not new_links:
         return
 
-    poster = None if (dry_run or no_tweet) else _make_poster()
-    successes = tweet_new_links(new_links, poster)
+    poster = None if (dry_run or no_post) else _make_poster()
+    successes = post_new_links(new_links, poster)
 
     if dry_run:
         return
@@ -296,10 +296,10 @@ def cli() -> None:
 
 @cli.command()
 @click.option("--dry-run", is_flag=True)
-@click.option("--no-tweet", is_flag=True, help="Updates the cache without tweeting")
+@click.option("--no-post", is_flag=True, help="Updates the cache without posting")
 @click.option("--cache", default=None, type=str, help="Cache path (local file or s3://bucket/key)")
-def post(dry_run: bool, cache: str | None, no_tweet: bool) -> None:
-    run(_resolve_cache(cache), dry_run=dry_run, no_tweet=no_tweet)
+def post(dry_run: bool, cache: str | None, no_post: bool) -> None:
+    run(_resolve_cache(cache), dry_run=dry_run, no_post=no_post)
 
 
 @cli.command()

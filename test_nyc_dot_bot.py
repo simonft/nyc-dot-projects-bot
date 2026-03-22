@@ -17,14 +17,14 @@ from nyc_dot_bot import (
     _make_poster,
     cli,
     find_new_links,
-    format_link_for_tweet,
+    format_link_for_post,
     get_html,
     get_pdf_links,
     make_cache,
     parse_s3_path,
+    post_new_links,
     run,
     truncate_text_for_skeet,
-    tweet_new_links,
 )
 
 
@@ -152,32 +152,32 @@ def test_find_new_links_too_many_raises():
         find_new_links(cached, current)
 
 
-# --- format_link_for_tweet ---
+# --- format_link_for_post ---
 
 
-def test_format_link_for_tweet_short():
+def test_format_link_for_post_short():
     link = make_link("https://example.com/a.pdf", "Project A (pdf)")
-    result = format_link_for_tweet(link)
+    result = format_link_for_post(link)
     assert result == "Project A https://example.com/a.pdf"
 
 
-def test_format_link_for_tweet_normalizes_whitespace():
+def test_format_link_for_post_normalizes_whitespace():
     link = make_link(
         "https://example.com/a.pdf",
         "Courtlandt\r\n                                          Avenue, Park Avenue, and Morris Avenue"
         " - presented to Bronx Community Board 1\r\n                                          in December 2025 (pdf)",
     )
-    result = format_link_for_tweet(link)
+    result = format_link_for_post(link)
     assert result == (
         "Courtlandt Avenue, Park Avenue, and Morris Avenue"
         " - presented to Bronx Community Board 1 in December 2025 https://example.com/a.pdf"
     )
 
 
-def test_format_link_for_tweet_truncates_long_text():
+def test_format_link_for_post_truncates_long_text():
     long_text = "A" * 300
     link = make_link("https://example.com/a.pdf", long_text)
-    result = format_link_for_tweet(link)
+    result = format_link_for_post(link)
     text_part = result.split(" https://")[0]
     # 280 - 23 (link) - 1 (space) = 256 max, truncated with ...
     assert len(text_part) == 256
@@ -238,38 +238,38 @@ def test_make_poster_mastodon(mock_mastodon, monkeypatch):
     assert isinstance(_make_poster(), MastodonPoster)
 
 
-# --- tweet_new_links ---
+# --- post_new_links ---
 
 
 @patch("nyc_dot_bot.convert_pdf_to_image")
 @patch("nyc_dot_bot.get_pdf")
-def test_tweet_new_links_no_poster_prints(mock_get_pdf, mock_convert, capsys):
+def test_post_new_links_no_poster_prints(mock_get_pdf, mock_convert, capsys):
     link = make_link("https://example.com/a.pdf", "Project A (pdf)")
     mock_get_pdf.return_value = b"pdf"
     mock_convert.return_value = MagicMock()
 
-    result = tweet_new_links([link])
+    result = post_new_links([link])
     assert result == {"https://example.com/a.pdf": "Project A (pdf)"}
-    assert 'Would have tweeted: "Project A https://example.com/a.pdf"' in capsys.readouterr().out
+    assert 'Would have posted: "Project A https://example.com/a.pdf"' in capsys.readouterr().out
 
 
 @patch("nyc_dot_bot.convert_pdf_to_image")
 @patch("nyc_dot_bot.get_pdf")
-def test_tweet_new_links_with_poster_calls_post(mock_get_pdf, mock_convert):
+def test_post_new_links_with_poster_calls_post(mock_get_pdf, mock_convert):
     link = make_link("https://example.com/a.pdf", "Project A")
     mock_get_pdf.return_value = b"pdf"
     image_buf = MagicMock()
     mock_convert.return_value = image_buf
     poster = MagicMock()
 
-    result = tweet_new_links([link], poster)
+    result = post_new_links([link], poster)
     assert result == {"https://example.com/a.pdf": "Project A"}
     poster.post.assert_called_once_with(link, image_buf)
 
 
 @patch("nyc_dot_bot.convert_pdf_to_image")
 @patch("nyc_dot_bot.get_pdf")
-def test_tweet_new_links_continues_after_failure(mock_get_pdf, mock_convert):
+def test_post_new_links_continues_after_failure(mock_get_pdf, mock_convert):
     link1 = make_link("https://example.com/a.pdf", "A")
     link2 = make_link("https://example.com/b.pdf", "B")
     mock_get_pdf.return_value = b"pdf"
@@ -277,7 +277,7 @@ def test_tweet_new_links_continues_after_failure(mock_get_pdf, mock_convert):
     poster = MagicMock()
     poster.post.side_effect = [RuntimeError("fail"), None]
 
-    result = tweet_new_links([link1, link2], poster)
+    result = post_new_links([link1, link2], poster)
     assert result == {"https://example.com/b.pdf": "B"}
     assert poster.post.call_count == 2
 
@@ -301,17 +301,17 @@ def test_run_no_new_links(mock_get_pdf_links, mock_get_html, tmp_path):
     assert LocalCache(cache_path).read() == initial
 
 
-@patch("nyc_dot_bot.tweet_new_links")
+@patch("nyc_dot_bot.post_new_links")
 @patch("nyc_dot_bot.get_html")
 @patch("nyc_dot_bot.get_pdf_links")
-def test_run_dry_run_does_not_write_cache(mock_get_pdf_links, mock_get_html, mock_tweet, tmp_path):
+def test_run_dry_run_does_not_write_cache(mock_get_pdf_links, mock_get_html, mock_post, tmp_path):
     cache_path = str(tmp_path / "cache.json")
     initial = CacheData()
     LocalCache(cache_path).write(initial)
 
     link = make_link("/doc/new.pdf", "New")
     mock_get_pdf_links.return_value = [link]
-    mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
+    mock_post.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
 
     run(cache_path, dry_run=True)
 
@@ -319,16 +319,16 @@ def test_run_dry_run_does_not_write_cache(mock_get_pdf_links, mock_get_html, moc
 
 
 @patch("nyc_dot_bot._make_poster")
-@patch("nyc_dot_bot.tweet_new_links")
+@patch("nyc_dot_bot.post_new_links")
 @patch("nyc_dot_bot.get_html")
 @patch("nyc_dot_bot.get_pdf_links")
-def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_tweet, mock_make_poster, tmp_path):
+def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_post, mock_make_poster, tmp_path):
     cache_path = str(tmp_path / "cache.json")
     LocalCache(cache_path).write(CacheData())
 
     link = make_link("/doc/new.pdf", "New")
     mock_get_pdf_links.return_value = [link]
-    mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
+    mock_post.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
 
     run(cache_path)
 
@@ -337,15 +337,15 @@ def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_t
 
 
 @patch("nyc_dot_bot._make_poster")
-@patch("nyc_dot_bot.tweet_new_links")
+@patch("nyc_dot_bot.post_new_links")
 @patch("nyc_dot_bot.get_html")
 @patch("nyc_dot_bot.get_pdf_links")
-def test_run_merges_new_links_with_existing_cache(mock_get_pdf_links, mock_get_html, mock_tweet, mock_make_poster, tmp_path):
+def test_run_merges_new_links_with_existing_cache(mock_get_pdf_links, mock_get_html, mock_post, mock_make_poster, tmp_path):
     cache_path = str(tmp_path / "cache.json")
     LocalCache(cache_path).write(CacheData(links={"https://www1.nyc.gov/doc/old.pdf": "Old"}))
 
     mock_get_pdf_links.return_value = [make_link("/doc/old.pdf", "Old"), make_link("/doc/new.pdf", "New")]
-    mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
+    mock_post.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
 
     run(cache_path)
 
@@ -358,17 +358,17 @@ def test_run_merges_new_links_with_existing_cache(mock_get_pdf_links, mock_get_h
     )
 
 
-@patch("nyc_dot_bot.tweet_new_links")
+@patch("nyc_dot_bot.post_new_links")
 @patch("nyc_dot_bot.get_html")
 @patch("nyc_dot_bot.get_pdf_links")
-def test_run_no_tweet_writes_cache(mock_get_pdf_links, mock_get_html, mock_tweet, tmp_path):
+def test_run_no_post_writes_cache(mock_get_pdf_links, mock_get_html, mock_post, tmp_path):
     cache_path = str(tmp_path / "cache.json")
     LocalCache(cache_path).write(CacheData())
 
     mock_get_pdf_links.return_value = [make_link("/doc/new.pdf", "New")]
-    mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
+    mock_post.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
 
-    run(cache_path, no_tweet=True)
+    run(cache_path, no_post=True)
 
     result = LocalCache(cache_path).read()
     assert result == CacheData(links={"https://www1.nyc.gov/doc/new.pdf": "New"})
@@ -382,7 +382,7 @@ def test_cli_post_with_cache_flag(mock_run):
     runner = CliRunner()
     result = runner.invoke(cli, ["post", "--cache", "/tmp/test.json", "--dry-run"])
     assert result.exit_code == 0
-    mock_run.assert_called_once_with("/tmp/test.json", dry_run=True, no_tweet=False)
+    mock_run.assert_called_once_with("/tmp/test.json", dry_run=True, no_post=False)
 
 
 @patch("nyc_dot_bot.run")
@@ -394,7 +394,7 @@ def test_cli_post_defaults_to_s3(mock_run, monkeypatch):
     mock_run.assert_called_once_with(
         "s3://nyc-dot-current-projects-bot-mastodon-staging/cache.json",
         dry_run=True,
-        no_tweet=False,
+        no_post=False,
     )
 
 
