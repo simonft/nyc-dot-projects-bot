@@ -3,6 +3,7 @@ import json
 import os
 import traceback
 from enum import Enum, auto
+from typing import Any
 from urllib.parse import urljoin
 
 import boto3
@@ -11,7 +12,7 @@ import requests
 import sentry_sdk
 import tweepy
 from atproto import Client, client_utils
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from dotenv import load_dotenv
 from mastodon import Mastodon
 from pdf2image import convert_from_bytes
@@ -27,7 +28,7 @@ current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-project
 DEFAULT_BUCKET = "nyc-dot-current-projects-bot-mastodon-staging"
 
 
-def parse_s3_path(path):
+def parse_s3_path(path: str) -> tuple[str, str]:
     """Split 's3://bucket/key' into (bucket, key)."""
     without_scheme = path[len("s3://") :]
     bucket, _, key = without_scheme.partition("/")
@@ -35,29 +36,29 @@ def parse_s3_path(path):
 
 
 class LocalCache:
-    def __init__(self, path):
+    def __init__(self, path: str) -> None:
         self.path = path
 
-    def read(self):
+    def read(self) -> dict[str, str]:
         with open(self.path) as f:
             return json.loads(f.read())
 
-    def write(self, data):
+    def write(self, data: dict[str, str]) -> None:
         with open(self.path, "w") as f:
             f.write(json.dumps(data))
 
 
 class S3Cache:
-    def __init__(self, bucket, key):
+    def __init__(self, bucket: str, key: str) -> None:
         self.bucket = bucket
         self.key = key
-        self.client = boto3.client("s3")
+        self.client: Any = boto3.client("s3")
 
-    def read(self):
+    def read(self) -> dict[str, str]:
         obj = self.client.get_object(Bucket=self.bucket, Key=self.key)
         return json.loads(obj["Body"].read())
 
-    def write(self, data):
+    def write(self, data: dict[str, str]) -> None:
         self.client.put_object(
             Bucket=self.bucket,
             Key=self.key,
@@ -65,7 +66,7 @@ class S3Cache:
         )
 
 
-def make_cache(cache_path):
+def make_cache(cache_path: str) -> LocalCache | S3Cache:
     if cache_path.startswith("s3://"):
         bucket, key = parse_s3_path(cache_path)
         return S3Cache(bucket, key)
@@ -90,32 +91,32 @@ class TooManyNewPDFsException(Exception):
     pass
 
 
-def get_html():
+def get_html() -> requests.Response:
     projects_html = requests.get(current_projects_url, timeout=30)
     projects_html.raise_for_status()
     projects_html.encoding = "utf-8"
     return projects_html
 
 
-def get_pdf_links(projects_html):
+def get_pdf_links(projects_html: requests.Response) -> list[Tag]:
     soup = BeautifulSoup(projects_html.text, "html.parser")
     content = soup.find(class_="view-content")
     links = content.find_all("a")
 
-    pdf_links = []
+    pdf_links: list[Tag] = []
     for link in links:
         if link["href"].endswith("pdf"):
             pdf_links.append(link)
     return pdf_links
 
 
-def get_pdf(link):
+def get_pdf(link: str) -> bytes:
     r = requests.get(link, timeout=30)
     r.raise_for_status()
     return r.content
 
 
-def convert_pdf_to_image(pdf):
+def convert_pdf_to_image(pdf: bytes) -> io.BytesIO:
     buf = io.BytesIO()
     image = convert_from_bytes(pdf)[0]
     image.thumbnail((2048, 2048))
@@ -124,8 +125,8 @@ def convert_pdf_to_image(pdf):
     return buf
 
 
-def find_new_links(cached_links, current_links):
-    new_links = []
+def find_new_links(cached_links: dict[str, str], current_links: list[Tag]) -> list[Tag]:
+    new_links: list[Tag] = []
     for link in current_links:
         link["href"] = urljoin(
             current_projects_url,
@@ -141,7 +142,7 @@ def find_new_links(cached_links, current_links):
     return new_links
 
 
-def format_link_for_tweet(link):
+def format_link_for_tweet(link: Tag) -> str:
     max_length = 280 - 23 - 1
     link_text = link.text
     link_text = link_text.replace(" (pdf)", "")
@@ -151,7 +152,7 @@ def format_link_for_tweet(link):
     return f"{link_text} {link['href']}"
 
 
-def truncate_text_for_skeet(link):
+def truncate_text_for_skeet(link: Tag) -> str:
     max_length = 300 - 1
     link_text = link.text
     link_text = link_text.replace(" (pdf)", "")
@@ -161,8 +162,8 @@ def truncate_text_for_skeet(link):
     return link_text
 
 
-def tweet_new_links(links, dry_run=False, no_tweet=False):
-    successes = {}
+def tweet_new_links(links: list[Tag], dry_run: bool = False, no_tweet: bool = False) -> dict[str, str]:
+    successes: dict[str, str] = {}
 
     if PLATFORM is Platform.TWITTER:
         auth = tweepy.OAuth1UserHandler(
@@ -230,7 +231,7 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
     return successes
 
 
-def run(cache_path, dry_run=False, no_tweet=False):
+def run(cache_path: str, dry_run: bool = False, no_tweet: bool = False) -> None:
     cache = make_cache(cache_path)
     cached_links = cache.read()
 
@@ -248,12 +249,12 @@ def run(cache_path, dry_run=False, no_tweet=False):
     cache.write(cached_links)
 
 
-def _default_s3_path():
+def _default_s3_path() -> str:
     bucket = os.environ.get("BUCKET_NAME") or DEFAULT_BUCKET
     return f"s3://{bucket}/cache.json"
 
 
-def lambda_handler(event=None, context=None):
+def lambda_handler(event: Any = None, context: Any = None) -> None:
     run(_default_s3_path())
 
 
@@ -261,7 +262,7 @@ def lambda_handler(event=None, context=None):
 @click.option("--dry-run", is_flag=True)
 @click.option("--no-tweet", is_flag=True, help="Updates the cache without tweeting")
 @click.option("--cache", default=None, type=str, help="Cache path (local file or s3://bucket/key)")
-def cli(dry_run, cache, no_tweet):
+def cli(dry_run: bool, cache: str | None, no_tweet: bool) -> None:
     if cache is None:
         cache = _default_s3_path()
     run(cache, dry_run=dry_run, no_tweet=no_tweet)
