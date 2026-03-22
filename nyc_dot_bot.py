@@ -24,7 +24,52 @@ load_dotenv()
 
 current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml"
 
-bucket_name = os.environ.get("BUCKET_NAME") or "nyc-dot-current-projects-bot-mastodon-staging"
+DEFAULT_BUCKET = "nyc-dot-current-projects-bot-mastodon-staging"
+
+
+def parse_s3_path(path):
+    """Split 's3://bucket/key' into (bucket, key)."""
+    without_scheme = path[len("s3://") :]
+    bucket, _, key = without_scheme.partition("/")
+    return bucket, key
+
+
+class LocalCache:
+    def __init__(self, path):
+        self.path = path
+
+    def read(self):
+        with open(self.path) as f:
+            return json.loads(f.read())
+
+    def write(self, data):
+        with open(self.path, "w") as f:
+            f.write(json.dumps(data))
+
+
+class S3Cache:
+    def __init__(self, bucket, key):
+        self.bucket = bucket
+        self.key = key
+        self.client = boto3.client("s3")
+
+    def read(self):
+        obj = self.client.get_object(Bucket=self.bucket, Key=self.key)
+        return json.loads(obj["Body"].read())
+
+    def write(self, data):
+        self.client.put_object(
+            Bucket=self.bucket,
+            Key=self.key,
+            Body=json.dumps(data),
+        )
+
+
+def make_cache(cache_path):
+    if cache_path.startswith("s3://"):
+        bucket, key = parse_s3_path(cache_path)
+        return S3Cache(bucket, key)
+    return LocalCache(cache_path)
 
 
 class Platform(Enum):
@@ -62,17 +107,6 @@ def get_pdf_links(projects_html):
         if link["href"].endswith("pdf"):
             pdf_links.append(link)
     return pdf_links
-
-
-def get_s3_cache(client, key="cache.json"):
-    cache = client.get_object(Bucket=bucket_name, Key=key)
-    return json.loads(cache["Body"].read())
-
-
-def get_local_cache(file_path):
-    with open(file_path) as f:
-        content = f.read()
-        return json.loads(content)
 
 
 def get_pdf(link):
@@ -196,17 +230,11 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
     return successes
 
 
-def run(event=None, context=None, local_cache=None, dry_run=False, no_tweet=False):
-    cache = None
-    client = None
+def run(cache_path, dry_run=False, no_tweet=False):
+    cache = make_cache(cache_path)
+    cached_links = cache.read()
 
-    if local_cache:
-        cache = get_local_cache(local_cache)
-    else:
-        client = boto3.client("s3")
-        cache = get_s3_cache(client)
-
-    new_links = find_new_links(cache, get_pdf_links(get_html()))
+    new_links = find_new_links(cached_links, get_pdf_links(get_html()))
 
     if not new_links:
         return
@@ -216,28 +244,27 @@ def run(event=None, context=None, local_cache=None, dry_run=False, no_tweet=Fals
     if dry_run:
         return
 
-    cache.update(successes)
-    if local_cache:
-        with open(local_cache, "w") as f:
-            f.write(json.dumps(cache))
-    else:
-        client.put_object(
-            Bucket=bucket_name,
-            Key="cache.json",
-            Body=json.dumps(cache),
-        )
+    cached_links.update(successes)
+    cache.write(cached_links)
+
+
+def _default_s3_path():
+    bucket = os.environ.get("BUCKET_NAME") or DEFAULT_BUCKET
+    return f"s3://{bucket}/cache.json"
 
 
 def lambda_handler(event=None, context=None):
-    run()
+    run(_default_s3_path())
 
 
 @click.command()
 @click.option("--dry-run", is_flag=True)
 @click.option("--no-tweet", is_flag=True, help="Updates the cache without tweeting")
-@click.option("--local-cache", default=None, type=click.Path(dir_okay=False, writable=True))
-def cli(dry_run, local_cache, no_tweet):
-    run(local_cache=local_cache, dry_run=dry_run, no_tweet=no_tweet)
+@click.option("--cache", default=None, type=str, help="Cache path (local file or s3://bucket/key)")
+def cli(dry_run, cache, no_tweet):
+    if cache is None:
+        cache = _default_s3_path()
+    run(cache, dry_run=dry_run, no_tweet=no_tweet)
 
 
 if __name__ == "__main__":
