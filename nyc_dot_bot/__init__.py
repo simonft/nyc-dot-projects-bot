@@ -1,3 +1,4 @@
+import copy
 import io
 import json
 import os
@@ -201,8 +202,9 @@ def find_new_links(cached: CacheData, current_links: list[Tag]) -> list[Tag]:
     for link in current_links:
         resolved = urljoin(current_projects_url, str(link["href"]))
         if resolved not in cached.links:
-            link["href"] = resolved
-            new_links.append(link)
+            new_link = copy.copy(link)
+            new_link["href"] = resolved
+            new_links.append(new_link)
 
     # prevent posting too many
     if len(new_links) > 15:
