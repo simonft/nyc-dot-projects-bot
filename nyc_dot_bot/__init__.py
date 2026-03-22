@@ -271,11 +271,48 @@ def _default_s3_path() -> str:
     return f"s3://{bucket}/cache.json"
 
 
-@click.command()
+def _resolve_cache(cache: str | None) -> str:
+    return cache if cache is not None else _default_s3_path()
+
+
+@click.group()
+def cli() -> None:
+    pass
+
+
+@cli.command()
 @click.option("--dry-run", is_flag=True)
 @click.option("--no-tweet", is_flag=True, help="Updates the cache without tweeting")
 @click.option("--cache", default=None, type=str, help="Cache path (local file or s3://bucket/key)")
-def cli(dry_run: bool, cache: str | None, no_tweet: bool) -> None:
-    if cache is None:
-        cache = _default_s3_path()
-    run(cache, dry_run=dry_run, no_tweet=no_tweet)
+def post(dry_run: bool, cache: str | None, no_tweet: bool) -> None:
+    run(_resolve_cache(cache), dry_run=dry_run, no_tweet=no_tweet)
+
+
+@cli.command()
+@click.option("--dry-run", is_flag=True)
+@click.option("--cache", default=None, type=str, help="Cache path (local file or s3://bucket/key)")
+def prune(dry_run: bool, cache: str | None) -> None:
+    """Remove cached links that are no longer on the page."""
+    cache_obj = make_cache(_resolve_cache(cache))
+    cached_links = cache_obj.read()
+
+    current_links = get_pdf_links(get_html())
+    current_urls = set()
+    for link in current_links:
+        current_urls.add(urljoin(current_projects_url, link["href"]))
+
+    stale = {url: text for url, text in cached_links.items() if url not in current_urls}
+
+    if not stale:
+        print("No stale links found.")
+        return
+
+    for url, text in stale.items():
+        print(f"Removing: {text} ({url})")
+
+    if dry_run:
+        return
+
+    for url in stale:
+        del cached_links[url]
+    cache_obj.write(cached_links)

@@ -381,24 +381,68 @@ def test_run_no_tweet_writes_cache(mock_get_pdf_links, mock_get_html, mock_tweet
 
 
 @patch("nyc_dot_bot.run")
-def test_cli_with_cache_flag(mock_run):
+def test_cli_post_with_cache_flag(mock_run):
     runner = CliRunner()
-    result = runner.invoke(cli, ["--cache", "/tmp/test.json", "--dry-run"])
+    result = runner.invoke(cli, ["post", "--cache", "/tmp/test.json", "--dry-run"])
     assert result.exit_code == 0
     mock_run.assert_called_once_with("/tmp/test.json", dry_run=True, no_tweet=False)
 
 
 @patch("nyc_dot_bot.run")
-def test_cli_defaults_to_s3(mock_run, monkeypatch):
+def test_cli_post_defaults_to_s3(mock_run, monkeypatch):
     monkeypatch.delenv("BUCKET_NAME", raising=False)
     runner = CliRunner()
-    result = runner.invoke(cli, ["--dry-run"])
+    result = runner.invoke(cli, ["post", "--dry-run"])
     assert result.exit_code == 0
     mock_run.assert_called_once_with(
         "s3://nyc-dot-current-projects-bot-mastodon-staging/cache.json",
         dry_run=True,
         no_tweet=False,
     )
+
+
+@patch("nyc_dot_bot.get_html")
+@patch("nyc_dot_bot.get_pdf_links")
+def test_cli_prune_dry_run(mock_get_pdf_links, mock_get_html, tmp_path):
+    cache_path = str(tmp_path / "cache.json")
+    with open(cache_path, "w") as f:
+        json.dump({
+            "https://www1.nyc.gov/doc/a.pdf": "A",
+            "https://www1.nyc.gov/doc/b.pdf": "B",
+        }, f)
+
+    # Only "a.pdf" is still on the page
+    mock_get_pdf_links.return_value = [make_link("/doc/a.pdf", "A")]
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["prune", "--cache", cache_path, "--dry-run"])
+    assert result.exit_code == 0
+    assert "Removing: B" in result.output
+
+    # Cache should be unchanged in dry-run
+    with open(cache_path) as f:
+        assert len(json.load(f)) == 2
+
+
+@patch("nyc_dot_bot.get_html")
+@patch("nyc_dot_bot.get_pdf_links")
+def test_cli_prune_removes_stale(mock_get_pdf_links, mock_get_html, tmp_path):
+    cache_path = str(tmp_path / "cache.json")
+    with open(cache_path, "w") as f:
+        json.dump({
+            "https://www1.nyc.gov/doc/a.pdf": "A",
+            "https://www1.nyc.gov/doc/b.pdf": "B",
+        }, f)
+
+    mock_get_pdf_links.return_value = [make_link("/doc/a.pdf", "A")]
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["prune", "--cache", cache_path])
+    assert result.exit_code == 0
+
+    with open(cache_path) as f:
+        cached = json.load(f)
+    assert cached == {"https://www1.nyc.gov/doc/a.pdf": "A"}
 
 
 # --- integration ---

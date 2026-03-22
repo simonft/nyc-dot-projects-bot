@@ -32,4 +32,4 @@ jobs:
 
       - run: sudo apt update && sudo apt install -y poppler-utils
 
-      - run: uv run nyc-dot-bot
+      - run: uv run nyc-dot-bot post
