@@ -46,7 +46,7 @@ class TooManyNewPDFsException(Exception):
 
 
 def get_html():
-    projects_html = requests.get(current_projects_url)
+    projects_html = requests.get(current_projects_url, timeout=30)
     projects_html.raise_for_status()
     projects_html.encoding = "utf-8"
     return projects_html
@@ -76,7 +76,7 @@ def get_local_cache(file_path):
 
 
 def get_pdf(link):
-    r = requests.get(link)
+    r = requests.get(link, timeout=30)
     r.raise_for_status()
     return r.content
 
@@ -112,7 +112,7 @@ def format_link_for_tweet(link):
     link_text = link.text
     link_text = link_text.replace(" (pdf)", "")
     if len(link_text) >= max_length:
-        link_text = f"{link_text[max_length - 3]}..."
+        link_text = f"{link_text[: max_length - 3]}..."
 
     return f"{link_text} {link['href']}"
 
@@ -122,7 +122,7 @@ def truncate_text_for_skeet(link):
     link_text = link.text
     link_text = link_text.replace(" (pdf)", "")
     if len(link_text) >= max_length:
-        link_text = f"{link_text[max_length - 3]}..."
+        link_text = f"{link_text[: max_length - 3]}..."
 
     return link_text
 
@@ -182,7 +182,7 @@ def tweet_new_links(links, dry_run=False, no_tweet=False):
                     image = image_buf.read()
                     mastodon_media = mastodon_client.media_post(
                         image,
-                        mime_type="image/png",
+                        mime_type="image/jpeg",
                         description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
                     )
                     mastodon_client.status_post(tweet_text, media_ids=[mastodon_media["id"]])
