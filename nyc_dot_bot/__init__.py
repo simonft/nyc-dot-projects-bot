@@ -280,7 +280,3 @@ def cli(dry_run: bool, cache: str | None, no_tweet: bool) -> None:
     if cache is None:
         cache = _default_s3_path()
     run(cache, dry_run=dry_run, no_tweet=no_tweet)
-
-
-if __name__ == "__main__":
-    cli()

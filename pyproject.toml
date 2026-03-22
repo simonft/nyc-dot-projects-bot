@@ -26,6 +26,16 @@ dev = [
     "ty",
 ]
 
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+
+[tool.uv.build-backend]
+module-root = ""
+
 [tool.ruff]
 line-length = 140
 
