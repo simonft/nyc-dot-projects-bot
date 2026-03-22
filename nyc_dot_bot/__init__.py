@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup, Tag
 from dotenv import load_dotenv
 from mastodon import Mastodon
 from pdf2image import convert_from_bytes
+from pydantic import BaseModel
 
 sentry_sdk.init()
 
@@ -32,22 +33,34 @@ def parse_s3_path(path: str) -> tuple[str, str]:
     return bucket, key
 
 
+class CacheData(BaseModel):
+    links: dict[str, str] = {}
+
+    @classmethod
+    def from_json(cls, raw: str | bytes) -> "CacheData":
+        """Parse JSON, handling both new format {"links": {...}} and legacy flat format {...}."""
+        data = json.loads(raw)
+        if "links" in data:
+            return cls.model_validate(data)
+        return cls(links=data)
+
+
 class Cache(Protocol):
-    def read(self) -> dict[str, str]: ...
-    def write(self, data: dict[str, str]) -> None: ...
+    def read(self) -> CacheData: ...
+    def write(self, data: CacheData) -> None: ...
 
 
 class LocalCache(Cache):
     def __init__(self, path: str) -> None:
         self.path = path
 
-    def read(self) -> dict[str, str]:
+    def read(self) -> CacheData:
         with open(self.path) as f:
-            return json.loads(f.read())
+            return CacheData.from_json(f.read())
 
-    def write(self, data: dict[str, str]) -> None:
+    def write(self, data: CacheData) -> None:
         with open(self.path, "w") as f:
-            f.write(json.dumps(data))
+            f.write(data.model_dump_json())
 
 
 class S3Cache(Cache):
@@ -56,15 +69,15 @@ class S3Cache(Cache):
         self.key = key
         self.client: Any = boto3.client("s3")
 
-    def read(self) -> dict[str, str]:
+    def read(self) -> CacheData:
         obj = self.client.get_object(Bucket=self.bucket, Key=self.key)
-        return json.loads(obj["Body"].read())
+        return CacheData.from_json(obj["Body"].read())
 
-    def write(self, data: dict[str, str]) -> None:
+    def write(self, data: CacheData) -> None:
         self.client.put_object(
             Bucket=self.bucket,
             Key=self.key,
-            Body=json.dumps(data),
+            Body=data.model_dump_json(),
         )
 
 
@@ -183,11 +196,11 @@ def convert_pdf_to_image(pdf: bytes) -> io.BytesIO:
     return buf
 
 
-def find_new_links(cached_links: dict[str, str], current_links: list[Tag]) -> list[Tag]:
+def find_new_links(cached: CacheData, current_links: list[Tag]) -> list[Tag]:
     new_links: list[Tag] = []
     for link in current_links:
         resolved = urljoin(current_projects_url, str(link["href"]))
-        if resolved not in cached_links:
+        if resolved not in cached.links:
             link["href"] = resolved
             new_links.append(link)
 
@@ -250,9 +263,9 @@ def tweet_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> d
 
 def run(cache_path: str, dry_run: bool = False, no_tweet: bool = False) -> None:
     cache = make_cache(cache_path)
-    cached_links = cache.read()
+    cached = cache.read()
 
-    new_links = find_new_links(cached_links, get_pdf_links(get_html()))
+    new_links = find_new_links(cached, get_pdf_links(get_html()))
 
     if not new_links:
         return
@@ -263,8 +276,8 @@ def run(cache_path: str, dry_run: bool = False, no_tweet: bool = False) -> None:
     if dry_run:
         return
 
-    cached_links.update(successes)
-    cache.write(cached_links)
+    cached.links.update(successes)
+    cache.write(cached)
 
 
 def _default_s3_path() -> str:
@@ -295,14 +308,14 @@ def post(dry_run: bool, cache: str | None, no_tweet: bool) -> None:
 def prune(dry_run: bool, cache: str | None) -> None:
     """Remove cached links that are no longer on the page."""
     cache_obj = make_cache(_resolve_cache(cache))
-    cached_links = cache_obj.read()
+    cached = cache_obj.read()
 
     current_links = get_pdf_links(get_html())
     current_urls = set()
     for link in current_links:
         current_urls.add(urljoin(current_projects_url, str(link["href"])))
 
-    stale = {url: text for url, text in cached_links.items() if url not in current_urls}
+    stale = {url: text for url, text in cached.links.items() if url not in current_urls}
 
     if not stale:
         print("No stale links found.")
@@ -315,5 +328,5 @@ def prune(dry_run: bool, cache: str | None) -> None:
         return
 
     for url in stale:
-        del cached_links[url]
-    cache_obj.write(cached_links)
+        del cached.links[url]
+    cache_obj.write(cached)

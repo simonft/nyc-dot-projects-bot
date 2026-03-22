@@ -1,4 +1,3 @@
-import json
 import random
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +7,7 @@ from click.testing import CliRunner
 
 from nyc_dot_bot import (
     BlueskyPoster,
+    CacheData,
     LocalCache,
     MastodonPoster,
     S3Cache,
@@ -73,7 +73,7 @@ def test_make_cache_returns_s3_for_s3_url(mock_boto3):
 
 def test_local_cache_read_write(tmp_path):
     path = str(tmp_path / "cache.json")
-    data = {"https://example.com/a.pdf": "Project A"}
+    data = CacheData(links={"https://example.com/a.pdf": "Project A"})
 
     cache = LocalCache(path)
     cache.write(data)
@@ -120,7 +120,7 @@ def test_get_pdf_links_empty():
 
 
 def test_find_new_links_returns_only_new():
-    cached = {"https://www1.nyc.gov/doc/a.pdf": "A"}
+    cached = CacheData(links={"https://www1.nyc.gov/doc/a.pdf": "A"})
     current = [make_link("/doc/a.pdf", "A"), make_link("/doc/b.pdf", "B")]
     result = find_new_links(cached, current)
     assert len(result) == 1
@@ -128,23 +128,25 @@ def test_find_new_links_returns_only_new():
 
 
 def test_find_new_links_all_cached():
-    cached = {
-        "https://www1.nyc.gov/doc/a.pdf": "A",
-        "https://www1.nyc.gov/doc/b.pdf": "B",
-    }
+    cached = CacheData(
+        links={
+            "https://www1.nyc.gov/doc/a.pdf": "A",
+            "https://www1.nyc.gov/doc/b.pdf": "B",
+        }
+    )
     current = [make_link("/doc/a.pdf", "A"), make_link("/doc/b.pdf", "B")]
     assert find_new_links(cached, current) == []
 
 
 def test_find_new_links_resolves_relative_urls():
-    cached: dict[str, str] = {}
+    cached = CacheData()
     current = [make_link("/doc/relative.pdf", "Relative")]
     result = find_new_links(cached, current)
     assert result[0]["href"] == "https://www1.nyc.gov/doc/relative.pdf"
 
 
 def test_find_new_links_too_many_raises():
-    cached: dict[str, str] = {}
+    cached = CacheData()
     current = [make_link(f"/doc/{i}.pdf", f"Link {i}") for i in range(1501)]
     with pytest.raises(TooManyNewPDFsException):
         find_new_links(cached, current)
@@ -287,9 +289,8 @@ def test_tweet_new_links_continues_after_failure(mock_get_pdf, mock_convert):
 @patch("nyc_dot_bot.get_pdf_links")
 def test_run_no_new_links(mock_get_pdf_links, mock_get_html, tmp_path):
     cache_path = str(tmp_path / "cache.json")
-    cache_data = {"https://www1.nyc.gov/doc/a.pdf": "A"}
-    with open(cache_path, "w") as f:
-        json.dump(cache_data, f)
+    initial = CacheData(links={"https://www1.nyc.gov/doc/a.pdf": "A"})
+    LocalCache(cache_path).write(initial)
 
     link = make_link("/doc/a.pdf", "A")
     mock_get_pdf_links.return_value = [link]
@@ -297,8 +298,7 @@ def test_run_no_new_links(mock_get_pdf_links, mock_get_html, tmp_path):
     run(cache_path, dry_run=True)
 
     # Cache should be unchanged
-    with open(cache_path) as f:
-        assert json.load(f) == cache_data
+    assert LocalCache(cache_path).read() == initial
 
 
 @patch("nyc_dot_bot.tweet_new_links")
@@ -306,8 +306,8 @@ def test_run_no_new_links(mock_get_pdf_links, mock_get_html, tmp_path):
 @patch("nyc_dot_bot.get_pdf_links")
 def test_run_dry_run_does_not_write_cache(mock_get_pdf_links, mock_get_html, mock_tweet, tmp_path):
     cache_path = str(tmp_path / "cache.json")
-    with open(cache_path, "w") as f:
-        json.dump({}, f)
+    initial = CacheData()
+    LocalCache(cache_path).write(initial)
 
     link = make_link("/doc/new.pdf", "New")
     mock_get_pdf_links.return_value = [link]
@@ -315,8 +315,7 @@ def test_run_dry_run_does_not_write_cache(mock_get_pdf_links, mock_get_html, moc
 
     run(cache_path, dry_run=True)
 
-    with open(cache_path) as f:
-        assert json.load(f) == {}
+    assert LocalCache(cache_path).read() == initial
 
 
 @patch("nyc_dot_bot._make_poster")
@@ -325,8 +324,7 @@ def test_run_dry_run_does_not_write_cache(mock_get_pdf_links, mock_get_html, moc
 @patch("nyc_dot_bot.get_pdf_links")
 def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_tweet, mock_make_poster, tmp_path):
     cache_path = str(tmp_path / "cache.json")
-    with open(cache_path, "w") as f:
-        json.dump({}, f)
+    LocalCache(cache_path).write(CacheData())
 
     link = make_link("/doc/new.pdf", "New")
     mock_get_pdf_links.return_value = [link]
@@ -334,9 +332,8 @@ def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_t
 
     run(cache_path)
 
-    with open(cache_path) as f:
-        result = json.load(f)
-    assert result == {"https://www1.nyc.gov/doc/new.pdf": "New"}
+    result = LocalCache(cache_path).read()
+    assert result == CacheData(links={"https://www1.nyc.gov/doc/new.pdf": "New"})
 
 
 @patch("nyc_dot_bot._make_poster")
@@ -345,20 +342,20 @@ def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_t
 @patch("nyc_dot_bot.get_pdf_links")
 def test_run_merges_new_links_with_existing_cache(mock_get_pdf_links, mock_get_html, mock_tweet, mock_make_poster, tmp_path):
     cache_path = str(tmp_path / "cache.json")
-    with open(cache_path, "w") as f:
-        json.dump({"https://www1.nyc.gov/doc/old.pdf": "Old"}, f)
+    LocalCache(cache_path).write(CacheData(links={"https://www1.nyc.gov/doc/old.pdf": "Old"}))
 
     mock_get_pdf_links.return_value = [make_link("/doc/old.pdf", "Old"), make_link("/doc/new.pdf", "New")]
     mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
 
     run(cache_path)
 
-    with open(cache_path) as f:
-        result = json.load(f)
-    assert result == {
-        "https://www1.nyc.gov/doc/old.pdf": "Old",
-        "https://www1.nyc.gov/doc/new.pdf": "New",
-    }
+    result = LocalCache(cache_path).read()
+    assert result == CacheData(
+        links={
+            "https://www1.nyc.gov/doc/old.pdf": "Old",
+            "https://www1.nyc.gov/doc/new.pdf": "New",
+        }
+    )
 
 
 @patch("nyc_dot_bot.tweet_new_links")
@@ -366,17 +363,15 @@ def test_run_merges_new_links_with_existing_cache(mock_get_pdf_links, mock_get_h
 @patch("nyc_dot_bot.get_pdf_links")
 def test_run_no_tweet_writes_cache(mock_get_pdf_links, mock_get_html, mock_tweet, tmp_path):
     cache_path = str(tmp_path / "cache.json")
-    with open(cache_path, "w") as f:
-        json.dump({}, f)
+    LocalCache(cache_path).write(CacheData())
 
     mock_get_pdf_links.return_value = [make_link("/doc/new.pdf", "New")]
     mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
 
     run(cache_path, no_tweet=True)
 
-    with open(cache_path) as f:
-        result = json.load(f)
-    assert result == {"https://www1.nyc.gov/doc/new.pdf": "New"}
+    result = LocalCache(cache_path).read()
+    assert result == CacheData(links={"https://www1.nyc.gov/doc/new.pdf": "New"})
 
 
 # --- cli ---
@@ -407,14 +402,13 @@ def test_cli_post_defaults_to_s3(mock_run, monkeypatch):
 @patch("nyc_dot_bot.get_pdf_links")
 def test_cli_prune_dry_run(mock_get_pdf_links, mock_get_html, tmp_path):
     cache_path = str(tmp_path / "cache.json")
-    with open(cache_path, "w") as f:
-        json.dump(
-            {
-                "https://www1.nyc.gov/doc/a.pdf": "A",
-                "https://www1.nyc.gov/doc/b.pdf": "B",
-            },
-            f,
-        )
+    initial = CacheData(
+        links={
+            "https://www1.nyc.gov/doc/a.pdf": "A",
+            "https://www1.nyc.gov/doc/b.pdf": "B",
+        }
+    )
+    LocalCache(cache_path).write(initial)
 
     # Only "a.pdf" is still on the page
     mock_get_pdf_links.return_value = [make_link("/doc/a.pdf", "A")]
@@ -425,22 +419,21 @@ def test_cli_prune_dry_run(mock_get_pdf_links, mock_get_html, tmp_path):
     assert "Removing: B" in result.output
 
     # Cache should be unchanged in dry-run
-    with open(cache_path) as f:
-        assert len(json.load(f)) == 2
+    assert LocalCache(cache_path).read() == initial
 
 
 @patch("nyc_dot_bot.get_html")
 @patch("nyc_dot_bot.get_pdf_links")
 def test_cli_prune_removes_stale(mock_get_pdf_links, mock_get_html, tmp_path):
     cache_path = str(tmp_path / "cache.json")
-    with open(cache_path, "w") as f:
-        json.dump(
-            {
+    LocalCache(cache_path).write(
+        CacheData(
+            links={
                 "https://www1.nyc.gov/doc/a.pdf": "A",
                 "https://www1.nyc.gov/doc/b.pdf": "B",
-            },
-            f,
+            }
         )
+    )
 
     mock_get_pdf_links.return_value = [make_link("/doc/a.pdf", "A")]
 
@@ -448,9 +441,8 @@ def test_cli_prune_removes_stale(mock_get_pdf_links, mock_get_html, tmp_path):
     result = runner.invoke(cli, ["prune", "--cache", cache_path])
     assert result.exit_code == 0
 
-    with open(cache_path) as f:
-        cached = json.load(f)
-    assert cached == {"https://www1.nyc.gov/doc/a.pdf": "A"}
+    result_cache = LocalCache(cache_path).read()
+    assert result_cache == CacheData(links={"https://www1.nyc.gov/doc/a.pdf": "A"})
 
 
 # --- integration ---
@@ -463,13 +455,13 @@ def test_detects_removed_link_from_cache(tmp_path):
     assert len(all_links) > 0, "Expected at least one PDF link on the page"
 
     # Build a full cache from all current links
-    cached = {}
-    for link in find_new_links({}, all_links):
-        cached[link["href"]] = link.text
+    cached = CacheData()
+    for link in find_new_links(CacheData(), all_links):
+        cached.links[str(link["href"])] = link.text
 
     # Remove one link at random
-    removed_url = random.choice(list(cached.keys()))
-    cached.pop(removed_url)
+    removed_url = random.choice(list(cached.links.keys()))
+    cached.links.pop(removed_url)
 
     # Re-fetch and find new links against the modified cache
     html = get_html()
