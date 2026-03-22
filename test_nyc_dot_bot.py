@@ -235,7 +235,16 @@ def test_make_poster_bluesky(mock_client, monkeypatch):
 def test_make_poster_mastodon(mock_mastodon, monkeypatch):
     monkeypatch.delenv("TWITTER_CONSUMER_KEY", raising=False)
     monkeypatch.delenv("BLUESKY_USERNAME", raising=False)
+    monkeypatch.setenv("MASTODON_ACCESS_TOKEN", "token")
     assert isinstance(_make_poster(), MastodonPoster)
+
+
+def test_make_poster_no_credentials_raises(monkeypatch):
+    monkeypatch.delenv("TWITTER_CONSUMER_KEY", raising=False)
+    monkeypatch.delenv("BLUESKY_USERNAME", raising=False)
+    monkeypatch.delenv("MASTODON_ACCESS_TOKEN", raising=False)
+    with pytest.raises(ValueError, match="No platform credentials configured"):
+        _make_poster()
 
 
 # --- post_new_links ---

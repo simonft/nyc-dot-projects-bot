@@ -150,7 +150,9 @@ def _make_poster() -> PlatformPoster:
         return TwitterPoster()
     elif os.environ.get("BLUESKY_USERNAME"):
         return BlueskyPoster()
-    return MastodonPoster()
+    elif os.environ.get("MASTODON_ACCESS_TOKEN"):
+        return MastodonPoster()
+    raise ValueError("No platform credentials configured. Set environment variables for Twitter, Bluesky, or Mastodon.")
 
 
 class TooManyNewPDFsException(Exception):
