@@ -1,5 +1,6 @@
 import random
 from unittest.mock import MagicMock, patch
+from urllib.parse import urljoin
 
 import pytest
 from bs4 import BeautifulSoup, Tag
@@ -465,8 +466,9 @@ def test_detects_removed_link_from_cache(tmp_path):
 
     # Build a full cache from all current links
     cached = CacheData()
-    for link in find_new_links(CacheData(), all_links):
-        cached.links[str(link["href"])] = link.text
+    for link in all_links:
+        resolved = urljoin("https://www1.nyc.gov/html/dot/html/about/current-projects.shtml", str(link["href"]))
+        cached.links[resolved] = link.text
 
     # Remove one link at random
     removed_url = random.choice(list(cached.links.keys()))
