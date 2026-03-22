@@ -322,6 +322,46 @@ def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_t
     assert result == {"https://www1.nyc.gov/doc/new.pdf": "New"}
 
 
+@patch("nyc_dot_bot._make_poster")
+@patch("nyc_dot_bot.tweet_new_links")
+@patch("nyc_dot_bot.get_html")
+@patch("nyc_dot_bot.get_pdf_links")
+def test_run_merges_new_links_with_existing_cache(mock_get_pdf_links, mock_get_html, mock_tweet, mock_make_poster, tmp_path):
+    cache_path = str(tmp_path / "cache.json")
+    with open(cache_path, "w") as f:
+        json.dump({"https://www1.nyc.gov/doc/old.pdf": "Old"}, f)
+
+    mock_get_pdf_links.return_value = [make_link("/doc/old.pdf", "Old"), make_link("/doc/new.pdf", "New")]
+    mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
+
+    run(cache_path)
+
+    with open(cache_path) as f:
+        result = json.load(f)
+    assert result == {
+        "https://www1.nyc.gov/doc/old.pdf": "Old",
+        "https://www1.nyc.gov/doc/new.pdf": "New",
+    }
+
+
+@patch("nyc_dot_bot.tweet_new_links")
+@patch("nyc_dot_bot.get_html")
+@patch("nyc_dot_bot.get_pdf_links")
+def test_run_no_tweet_writes_cache(mock_get_pdf_links, mock_get_html, mock_tweet, tmp_path):
+    cache_path = str(tmp_path / "cache.json")
+    with open(cache_path, "w") as f:
+        json.dump({}, f)
+
+    mock_get_pdf_links.return_value = [make_link("/doc/new.pdf", "New")]
+    mock_tweet.return_value = {"https://www1.nyc.gov/doc/new.pdf": "New"}
+
+    run(cache_path, no_tweet=True)
+
+    with open(cache_path) as f:
+        result = json.load(f)
+    assert result == {"https://www1.nyc.gov/doc/new.pdf": "New"}
+
+
 # --- cli ---
 
 
