@@ -7,3 +7,4 @@ feed.xml
 cache.json.new
 feed.rss
 .zed
+__pycache__
