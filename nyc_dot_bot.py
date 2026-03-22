@@ -99,6 +99,8 @@ def get_html() -> requests.Response:
 def get_pdf_links(projects_html: requests.Response) -> list[Tag]:
     soup = BeautifulSoup(projects_html.text, "html.parser")
     content = soup.find(class_="view-content")
+    if content is None:
+        raise ValueError("Could not find 'view-content' element on page")
     links = content.find_all("a")
 
     pdf_links: list[Tag] = []
