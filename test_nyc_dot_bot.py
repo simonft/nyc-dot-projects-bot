@@ -147,7 +147,7 @@ def test_find_new_links_resolves_relative_urls():
 
 def test_find_new_links_too_many_raises():
     cached = CacheData()
-    current = [make_link(f"/doc/{i}.pdf", f"Link {i}") for i in range(1501)]
+    current = [make_link(f"/doc/{i}.pdf", f"Link {i}") for i in range(16)]
     with pytest.raises(TooManyNewPDFsException):
         find_new_links(cached, current)
 

@@ -205,7 +205,7 @@ def find_new_links(cached: CacheData, current_links: list[Tag]) -> list[Tag]:
             new_links.append(link)
 
     # prevent tweeting too many
-    if len(new_links) > 1500:
+    if len(new_links) > 15:
         raise TooManyNewPDFsException
 
     return new_links
