@@ -6,10 +6,14 @@ from bs4 import BeautifulSoup, Tag
 from click.testing import CliRunner
 
 from nyc_dot_bot import (
+    BlueskyPoster,
     LocalCache,
+    MastodonPoster,
     S3Cache,
     TooManyNewPDFsException,
+    TwitterPoster,
     _default_s3_path,
+    _make_poster,
     cli,
     find_new_links,
     format_link_for_tweet,
@@ -18,6 +22,7 @@ from nyc_dot_bot import (
     parse_s3_path,
     run,
     truncate_text_for_skeet,
+    tweet_new_links,
 )
 
 
@@ -189,6 +194,75 @@ def test_default_s3_path_fallback(monkeypatch):
     assert _default_s3_path() == "s3://nyc-dot-current-projects-bot-mastodon-staging/cache.json"
 
 
+# --- _make_poster ---
+
+
+@patch("nyc_dot_bot.tweepy")
+def test_make_poster_twitter(mock_tweepy, monkeypatch):
+    monkeypatch.setenv("TWITTER_CONSUMER_KEY", "key")
+    monkeypatch.delenv("BLUESKY_USERNAME", raising=False)
+    assert isinstance(_make_poster(), TwitterPoster)
+
+
+@patch("nyc_dot_bot.Client")
+def test_make_poster_bluesky(mock_client, monkeypatch):
+    monkeypatch.delenv("TWITTER_CONSUMER_KEY", raising=False)
+    monkeypatch.setenv("BLUESKY_USERNAME", "user")
+    monkeypatch.setenv("BLUESKY_APP_PASSWORD", "pass")
+    assert isinstance(_make_poster(), BlueskyPoster)
+
+
+@patch("nyc_dot_bot.Mastodon")
+def test_make_poster_mastodon(mock_mastodon, monkeypatch):
+    monkeypatch.delenv("TWITTER_CONSUMER_KEY", raising=False)
+    monkeypatch.delenv("BLUESKY_USERNAME", raising=False)
+    assert isinstance(_make_poster(), MastodonPoster)
+
+
+# --- tweet_new_links ---
+
+
+@patch("nyc_dot_bot.convert_pdf_to_image")
+@patch("nyc_dot_bot.get_pdf")
+def test_tweet_new_links_no_poster_prints(mock_get_pdf, mock_convert, capsys):
+    link = make_link("https://example.com/a.pdf", "Project A (pdf)")
+    mock_get_pdf.return_value = b"pdf"
+    mock_convert.return_value = MagicMock()
+
+    result = tweet_new_links([link])
+    assert result == {"https://example.com/a.pdf": "Project A (pdf)"}
+    assert 'Would have tweeted: "Project A https://example.com/a.pdf"' in capsys.readouterr().out
+
+
+@patch("nyc_dot_bot.convert_pdf_to_image")
+@patch("nyc_dot_bot.get_pdf")
+def test_tweet_new_links_with_poster_calls_post(mock_get_pdf, mock_convert):
+    link = make_link("https://example.com/a.pdf", "Project A")
+    mock_get_pdf.return_value = b"pdf"
+    image_buf = MagicMock()
+    mock_convert.return_value = image_buf
+    poster = MagicMock()
+
+    result = tweet_new_links([link], poster)
+    assert result == {"https://example.com/a.pdf": "Project A"}
+    poster.post.assert_called_once_with(link, image_buf)
+
+
+@patch("nyc_dot_bot.convert_pdf_to_image")
+@patch("nyc_dot_bot.get_pdf")
+def test_tweet_new_links_continues_after_failure(mock_get_pdf, mock_convert):
+    link1 = make_link("https://example.com/a.pdf", "A")
+    link2 = make_link("https://example.com/b.pdf", "B")
+    mock_get_pdf.return_value = b"pdf"
+    mock_convert.return_value = MagicMock()
+    poster = MagicMock()
+    poster.post.side_effect = [RuntimeError("fail"), None]
+
+    result = tweet_new_links([link1, link2], poster)
+    assert result == {"https://example.com/b.pdf": "B"}
+    assert poster.post.call_count == 2
+
+
 # --- run ---
 
 
@@ -228,10 +302,11 @@ def test_run_dry_run_does_not_write_cache(mock_get_pdf_links, mock_get_html, moc
         assert json.load(f) == {}
 
 
+@patch("nyc_dot_bot._make_poster")
 @patch("nyc_dot_bot.tweet_new_links")
 @patch("nyc_dot_bot.get_html")
 @patch("nyc_dot_bot.get_pdf_links")
-def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_tweet, tmp_path):
+def test_run_writes_successes_to_cache(mock_get_pdf_links, mock_get_html, mock_tweet, mock_make_poster, tmp_path):
     cache_path = str(tmp_path / "cache.json")
     with open(cache_path, "w") as f:
         json.dump({}, f)

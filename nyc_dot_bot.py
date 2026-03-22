@@ -2,7 +2,6 @@ import io
 import json
 import os
 import traceback
-from enum import Enum, auto
 from typing import Any, Protocol
 from urllib.parse import urljoin
 
@@ -76,18 +75,72 @@ def make_cache(cache_path: str) -> Cache:
     return LocalCache(cache_path)
 
 
-class Platform(Enum):
-    MASTODON = auto()
-    TWITTER = auto()
-    BLUESKY = auto()
+class PlatformPoster(Protocol):
+    def post(self, link: Tag, image_buf: io.BytesIO) -> None: ...
 
 
-def _get_platform() -> Platform:
+class TwitterPoster(PlatformPoster):
+    def __init__(self) -> None:
+        auth = tweepy.OAuth1UserHandler(
+            os.environ.get("TWITTER_CONSUMER_KEY"),
+            os.environ.get("TWITTER_CONSUMER_SECRET"),
+            os.environ.get("TWITTER_ACCESS_TOKEN"),
+            os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
+        )
+        self.client_v1 = tweepy.API(auth)
+        self.client_v2 = tweepy.Client(
+            consumer_key=os.environ.get("TWITTER_CONSUMER_KEY"),
+            consumer_secret=os.environ.get("TWITTER_CONSUMER_SECRET"),
+            access_token=os.environ.get("TWITTER_ACCESS_TOKEN"),
+            access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
+        )
+
+    def post(self, link: Tag, image_buf: io.BytesIO) -> None:
+        tweet_text = format_link_for_tweet(link)
+        media = self.client_v1.media_upload(filename="", file=image_buf)
+        self.client_v2.create_tweet(text=tweet_text, media_ids=[media.media_id])
+
+
+class BlueskyPoster(PlatformPoster):
+    def __init__(self) -> None:
+        self.client = Client()
+        self.client.login(os.environ.get("BLUESKY_USERNAME"), os.environ.get("BLUESKY_APP_PASSWORD"))
+
+    def post(self, link: Tag, image_buf: io.BytesIO) -> None:
+        self.client.send_image(
+            text=client_utils.TextBuilder().link(
+                truncate_text_for_skeet(link),
+                link["href"],
+            ),
+            image=image_buf.read(),
+            image_alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
+        )
+
+
+class MastodonPoster(PlatformPoster):
+    def __init__(self) -> None:
+        self.client = Mastodon(
+            api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
+            access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
+        )
+
+    def post(self, link: Tag, image_buf: io.BytesIO) -> None:
+        tweet_text = format_link_for_tweet(link)
+        image = image_buf.read()
+        mastodon_media = self.client.media_post(
+            image,
+            mime_type="image/jpeg",
+            description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
+        )
+        self.client.status_post(tweet_text, media_ids=[mastodon_media["id"]])
+
+
+def _make_poster() -> PlatformPoster:
     if os.environ.get("TWITTER_CONSUMER_KEY"):
-        return Platform.TWITTER
+        return TwitterPoster()
     elif os.environ.get("BLUESKY_USERNAME"):
-        return Platform.BLUESKY
-    return Platform.MASTODON
+        return BlueskyPoster()
+    return MastodonPoster()
 
 
 class TooManyNewPDFsException(Exception):
@@ -165,67 +218,24 @@ def truncate_text_for_skeet(link: Tag) -> str:
     return link_text
 
 
-def tweet_new_links(links: list[Tag], platform: Platform, dry_run: bool = False, no_tweet: bool = False) -> dict[str, str]:
+def tweet_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> dict[str, str]:
     successes: dict[str, str] = {}
-
-    if platform is Platform.TWITTER:
-        auth = tweepy.OAuth1UserHandler(
-            os.environ.get("TWITTER_CONSUMER_KEY"),
-            os.environ.get("TWITTER_CONSUMER_SECRET"),
-            os.environ.get("TWITTER_ACCESS_TOKEN"),
-            os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
-        )
-        twitter_client_v1 = tweepy.API(auth)
-        twitter_client_v2 = tweepy.Client(
-            consumer_key=os.environ.get("TWITTER_CONSUMER_KEY"),
-            consumer_secret=os.environ.get("TWITTER_CONSUMER_SECRET"),
-            access_token=os.environ.get("TWITTER_ACCESS_TOKEN"),
-            access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
-        )
-    elif platform is Platform.BLUESKY:
-        bsky_client = Client()
-        bsky_client.login(os.environ.get("BLUESKY_USERNAME"), os.environ.get("BLUESKY_APP_PASSWORD"))
-    else:
-        mastodon_client = Mastodon(
-            api_base_url=os.environ.get("MASTODON_API_BASE_URL"),
-            access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
-        )
 
     # If any of these fail, we want to record the rest succeeded so
     # we don't tweet them again. We still want them to go to sentry though.
     for link in links:
         try:
-            # link takes 23 chars and we want a space
-            tweet_text = format_link_for_tweet(link)
             image_buf = convert_pdf_to_image(get_pdf(link["href"]))
 
-            if dry_run or no_tweet:
+            if poster is None:
+                tweet_text = format_link_for_tweet(link)
                 print(f'Would have tweeted: "{tweet_text}"')
             else:
-                if platform is Platform.TWITTER:
-                    media = twitter_client_v1.media_upload(filename="", file=image_buf)
-                    twitter_client_v2.create_tweet(text=tweet_text, media_ids=[media.media_id])
-                elif platform is Platform.BLUESKY:
-                    image = image_buf.read()
-
-                    bsky_client.send_image(
-                        text=client_utils.TextBuilder().link(
-                            truncate_text_for_skeet(link),
-                            link["href"],
-                        ),
-                        image=image,
-                        image_alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
-                    )
-                else:
-                    image = image_buf.read()
-                    mastodon_media = mastodon_client.media_post(
-                        image,
-                        mime_type="image/jpeg",
-                        description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
-                    )
-                    mastodon_client.status_post(tweet_text, media_ids=[mastodon_media["id"]])
+                poster.post(link, image_buf)
 
             successes[link["href"]] = link.text
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception as e:
             sentry_sdk.capture_exception(e)
             print(e)
@@ -243,7 +253,8 @@ def run(cache_path: str, dry_run: bool = False, no_tweet: bool = False) -> None:
     if not new_links:
         return
 
-    successes = tweet_new_links(new_links, _get_platform(), dry_run, no_tweet)
+    poster = None if (dry_run or no_tweet) else _make_poster()
+    successes = tweet_new_links(new_links, poster)
 
     if dry_run:
         return
