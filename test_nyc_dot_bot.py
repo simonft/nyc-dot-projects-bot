@@ -157,6 +157,19 @@ def test_format_link_for_tweet_short():
     assert result == "Project A https://example.com/a.pdf"
 
 
+def test_format_link_for_tweet_normalizes_whitespace():
+    link = make_link(
+        "https://example.com/a.pdf",
+        "Courtlandt\r\n                                          Avenue, Park Avenue, and Morris Avenue"
+        " - presented to Bronx Community Board 1\r\n                                          in December 2025 (pdf)",
+    )
+    result = format_link_for_tweet(link)
+    assert result == (
+        "Courtlandt Avenue, Park Avenue, and Morris Avenue"
+        " - presented to Bronx Community Board 1 in December 2025 https://example.com/a.pdf"
+    )
+
+
 def test_format_link_for_tweet_truncates_long_text():
     long_text = "A" * 300
     link = make_link("https://example.com/a.pdf", long_text)

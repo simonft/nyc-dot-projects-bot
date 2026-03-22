@@ -198,10 +198,14 @@ def find_new_links(cached_links: dict[str, str], current_links: list[Tag]) -> li
     return new_links
 
 
+def _clean_link_text(link: Tag) -> str:
+    text = " ".join(link.text.split())
+    return text.replace(" (pdf)", "")
+
+
 def format_link_for_tweet(link: Tag) -> str:
     max_length = 280 - 23 - 1
-    link_text = link.text
-    link_text = link_text.replace(" (pdf)", "")
+    link_text = _clean_link_text(link)
     if len(link_text) >= max_length:
         link_text = f"{link_text[: max_length - 3]}..."
 
@@ -210,8 +214,7 @@ def format_link_for_tweet(link: Tag) -> str:
 
 def truncate_text_for_skeet(link: Tag) -> str:
     max_length = 300 - 1
-    link_text = link.text
-    link_text = link_text.replace(" (pdf)", "")
+    link_text = _clean_link_text(link)
     if len(link_text) >= max_length:
         link_text = f"{link_text[: max_length - 3]}..."
 
