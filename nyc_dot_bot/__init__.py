@@ -18,10 +18,6 @@ from mastodon import Mastodon
 from pdf2image import convert_from_bytes
 from pydantic import BaseModel
 
-sentry_sdk.init()
-
-load_dotenv()
-
 current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-projects.shtml"
 
 DEFAULT_BUCKET = "nyc-dot-current-projects-bot-mastodon-staging"
@@ -293,7 +289,8 @@ def _resolve_cache(cache: str | None) -> str:
 
 @click.group()
 def cli() -> None:
-    pass
+    load_dotenv()
+    sentry_sdk.init()
 
 
 @cli.command()
