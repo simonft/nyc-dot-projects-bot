@@ -3,7 +3,7 @@ import json
 import os
 import traceback
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urljoin
 
 import boto3
@@ -33,7 +33,12 @@ def parse_s3_path(path: str) -> tuple[str, str]:
     return bucket, key
 
 
-class LocalCache:
+class Cache(Protocol):
+    def read(self) -> dict[str, str]: ...
+    def write(self, data: dict[str, str]) -> None: ...
+
+
+class LocalCache(Cache):
     def __init__(self, path: str) -> None:
         self.path = path
 
@@ -46,7 +51,7 @@ class LocalCache:
             f.write(json.dumps(data))
 
 
-class S3Cache:
+class S3Cache(Cache):
     def __init__(self, bucket: str, key: str) -> None:
         self.bucket = bucket
         self.key = key
@@ -64,7 +69,7 @@ class S3Cache:
         )
 
 
-def make_cache(cache_path: str) -> LocalCache | S3Cache:
+def make_cache(cache_path: str) -> Cache:
     if cache_path.startswith("s3://"):
         bucket, key = parse_s3_path(cache_path)
         return S3Cache(bucket, key)
