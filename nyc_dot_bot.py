@@ -126,11 +126,9 @@ def convert_pdf_to_image(pdf: bytes) -> io.BytesIO:
 def find_new_links(cached_links: dict[str, str], current_links: list[Tag]) -> list[Tag]:
     new_links: list[Tag] = []
     for link in current_links:
-        link["href"] = urljoin(
-            current_projects_url,
-            link["href"],
-        )
-        if link["href"] not in cached_links:
+        resolved = urljoin(current_projects_url, link["href"])
+        if resolved not in cached_links:
+            link["href"] = resolved
             new_links.append(link)
 
     # prevent tweeting too many
