@@ -17,9 +17,7 @@ from dotenv import load_dotenv
 from mastodon import Mastodon
 from pdf2image import convert_from_bytes
 
-sentry_sdk.init(
-    traces_sample_rate=1.0,
-)
+sentry_sdk.init()
 
 load_dotenv()
 
