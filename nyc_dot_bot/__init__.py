@@ -268,10 +268,6 @@ def _default_s3_path() -> str:
     return f"s3://{bucket}/cache.json"
 
 
-def lambda_handler(event: Any = None, context: Any = None) -> None:
-    run(_default_s3_path())
-
-
 @click.command()
 @click.option("--dry-run", is_flag=True)
 @click.option("--no-tweet", is_flag=True, help="Updates the cache without tweeting")
