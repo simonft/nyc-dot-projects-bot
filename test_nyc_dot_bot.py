@@ -31,7 +31,9 @@ from nyc_dot_bot import (
 def make_link(href: str, text: str) -> Tag:
     """Build a bs4 <a> Tag for testing."""
     html = f'<a href="{href}">{text}</a>'
-    return BeautifulSoup(html, "html.parser").a
+    tag = BeautifulSoup(html, "html.parser").a
+    assert tag is not None
+    return tag
 
 
 # --- parse_s3_path ---
@@ -406,10 +408,13 @@ def test_cli_post_defaults_to_s3(mock_run, monkeypatch):
 def test_cli_prune_dry_run(mock_get_pdf_links, mock_get_html, tmp_path):
     cache_path = str(tmp_path / "cache.json")
     with open(cache_path, "w") as f:
-        json.dump({
-            "https://www1.nyc.gov/doc/a.pdf": "A",
-            "https://www1.nyc.gov/doc/b.pdf": "B",
-        }, f)
+        json.dump(
+            {
+                "https://www1.nyc.gov/doc/a.pdf": "A",
+                "https://www1.nyc.gov/doc/b.pdf": "B",
+            },
+            f,
+        )
 
     # Only "a.pdf" is still on the page
     mock_get_pdf_links.return_value = [make_link("/doc/a.pdf", "A")]
@@ -429,10 +434,13 @@ def test_cli_prune_dry_run(mock_get_pdf_links, mock_get_html, tmp_path):
 def test_cli_prune_removes_stale(mock_get_pdf_links, mock_get_html, tmp_path):
     cache_path = str(tmp_path / "cache.json")
     with open(cache_path, "w") as f:
-        json.dump({
-            "https://www1.nyc.gov/doc/a.pdf": "A",
-            "https://www1.nyc.gov/doc/b.pdf": "B",
-        }, f)
+        json.dump(
+            {
+                "https://www1.nyc.gov/doc/a.pdf": "A",
+                "https://www1.nyc.gov/doc/b.pdf": "B",
+            },
+            f,
+        )
 
     mock_get_pdf_links.return_value = [make_link("/doc/a.pdf", "A")]
 

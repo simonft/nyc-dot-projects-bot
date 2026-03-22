@@ -110,7 +110,7 @@ class BlueskyPoster(PlatformPoster):
         self.client.send_image(
             text=client_utils.TextBuilder().link(
                 truncate_text_for_skeet(link),
-                link["href"],
+                str(link["href"]),
             ),
             image=image_buf.read(),
             image_alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
@@ -163,7 +163,7 @@ def get_pdf_links(projects_html: requests.Response) -> list[Tag]:
 
     pdf_links: list[Tag] = []
     for link in links:
-        if link["href"].endswith("pdf"):
+        if str(link["href"]).endswith("pdf"):
             pdf_links.append(link)
     return pdf_links
 
@@ -186,7 +186,7 @@ def convert_pdf_to_image(pdf: bytes) -> io.BytesIO:
 def find_new_links(cached_links: dict[str, str], current_links: list[Tag]) -> list[Tag]:
     new_links: list[Tag] = []
     for link in current_links:
-        resolved = urljoin(current_projects_url, link["href"])
+        resolved = urljoin(current_projects_url, str(link["href"]))
         if resolved not in cached_links:
             link["href"] = resolved
             new_links.append(link)
@@ -209,7 +209,7 @@ def format_link_for_tweet(link: Tag) -> str:
     if len(link_text) >= max_length:
         link_text = f"{link_text[: max_length - 3]}..."
 
-    return f"{link_text} {link['href']}"
+    return f"{link_text} {str(link['href'])}"
 
 
 def truncate_text_for_skeet(link: Tag) -> str:
@@ -228,7 +228,8 @@ def tweet_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> d
     # we don't tweet them again. We still want them to go to sentry though.
     for link in links:
         try:
-            image_buf = convert_pdf_to_image(get_pdf(link["href"]))
+            href = str(link["href"])
+            image_buf = convert_pdf_to_image(get_pdf(href))
 
             if poster is None:
                 tweet_text = format_link_for_tweet(link)
@@ -236,7 +237,7 @@ def tweet_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> d
             else:
                 poster.post(link, image_buf)
 
-            successes[link["href"]] = link.text
+            successes[href] = link.text
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as e:
@@ -299,7 +300,7 @@ def prune(dry_run: bool, cache: str | None) -> None:
     current_links = get_pdf_links(get_html())
     current_urls = set()
     for link in current_links:
-        current_urls.add(urljoin(current_projects_url, link["href"]))
+        current_urls.add(urljoin(current_projects_url, str(link["href"])))
 
     stale = {url: text for url, text in cached_links.items() if url not in current_urls}
 
