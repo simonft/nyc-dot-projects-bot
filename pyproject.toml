@@ -1,0 +1,24 @@
+[project]
+name = "nyc-dot-bot"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "requests==2.31.0",
+    "beautifulsoup4==4.9.3",
+    "boto3==1.17.97",
+    "tweepy==4.14.0",
+    "python-dotenv==0.18.0",
+    "sentry_sdk==1.1.0",
+    "click==8.1.7",
+    "feedgen==0.9.0",
+    "pytz==2021.1",
+    "mastodon.py==1.8.0",
+    "pdf2image==1.16.3",
+    "atproto>=0.0.56",
+]
+
+[project.scripts]
+nyc-dot-bot = "nyc_dot_bot:cli"
+
+[tool.flake8]
+max-line-length = 140
