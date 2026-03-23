@@ -58,7 +58,8 @@ class LocalCache(Cache):
 
     def write(self, data: CacheData) -> None:
         with open(self.path, "w") as f:
-            f.write(data.model_dump_json())
+            json.dump(data.model_dump(), f, indent=2)
+            f.write("\n")
 
 
 class S3Cache(Cache):
