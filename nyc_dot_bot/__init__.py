@@ -11,7 +11,7 @@ import click
 import requests
 import sentry_sdk
 import tweepy
-from atproto import Client, client_utils
+from atproto import Client, models
 from bs4 import BeautifulSoup, Tag
 from dotenv import load_dotenv
 from mastodon import Mastodon
@@ -86,7 +86,7 @@ def make_cache(cache_path: str) -> Cache:
 
 
 class PlatformPoster(Protocol):
-    def post(self, link: Tag, image_buf: io.BytesIO) -> None: ...
+    def post(self, link: Tag, title: str, image: bytes) -> None: ...
 
 
 class TwitterPoster(PlatformPoster):
@@ -105,10 +105,9 @@ class TwitterPoster(PlatformPoster):
             access_token_secret=os.environ.get("TWITTER_ACCESS_TOKEN_SECRET"),
         )
 
-    def post(self, link: Tag, image_buf: io.BytesIO) -> None:
-        post_text = format_link_for_post(link)
-        media = self.client_v1.media_upload(filename="", file=image_buf)
-        self.client_v2.create_tweet(text=post_text, media_ids=[media.media_id])
+    def post(self, link: Tag, title: str, image: bytes) -> None:
+        media = self.client_v1.media_upload(filename="", file=io.BytesIO(image))
+        self.client_v2.create_tweet(text=format_link_for_post(link), media_ids=[media.media_id])
 
 
 class BlueskyPoster(PlatformPoster):
@@ -116,15 +115,17 @@ class BlueskyPoster(PlatformPoster):
         self.client = Client()
         self.client.login(os.environ.get("BLUESKY_USERNAME"), os.environ.get("BLUESKY_APP_PASSWORD"))
 
-    def post(self, link: Tag, image_buf: io.BytesIO) -> None:
-        self.client.send_image(
-            text=client_utils.TextBuilder().link(
-                truncate_text_for_skeet(link),
-                str(link["href"]),
-            ),
-            image=image_buf.read(),
-            image_alt="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
+    def post(self, link: Tag, title: str, image: bytes) -> None:
+        thumb = self.client.upload_blob(image)
+        embed = models.AppBskyEmbedExternal.Main(
+            external=models.AppBskyEmbedExternal.External(
+                uri=str(link["href"]),
+                title=title,
+                description="",
+                thumb=thumb.blob,
+            )
         )
+        self.client.send_post(text="", embed=embed)
 
 
 class MastodonPoster(PlatformPoster):
@@ -134,15 +135,13 @@ class MastodonPoster(PlatformPoster):
             access_token=os.environ.get("MASTODON_ACCESS_TOKEN"),
         )
 
-    def post(self, link: Tag, image_buf: io.BytesIO) -> None:
-        post_text = format_link_for_post(link)
-        image = image_buf.read()
+    def post(self, link: Tag, title: str, image: bytes) -> None:
         mastodon_media = self.client.media_post(
             image,
             mime_type="image/jpeg",
             description="Screenshot of first page of PDF. Auto posted so can't describe, sorry.",
         )
-        self.client.status_post(post_text, media_ids=[mastodon_media["id"]])
+        self.client.status_post(format_link_for_post(link), media_ids=[mastodon_media["id"]])
 
 
 def _make_poster() -> PlatformPoster:
@@ -225,15 +224,6 @@ def format_link_for_post(link: Tag) -> str:
     return f"{link_text} {str(link['href'])}"
 
 
-def truncate_text_for_skeet(link: Tag) -> str:
-    max_length = 300 - 1
-    link_text = _clean_link_text(link)
-    if len(link_text) >= max_length:
-        link_text = f"{link_text[: max_length - 3]}..."
-
-    return link_text
-
-
 def post_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> dict[str, str]:
     successes: dict[str, str] = {}
 
@@ -242,13 +232,14 @@ def post_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> di
     for link in links:
         try:
             href = str(link["href"])
-            image_buf = convert_pdf_to_image(get_pdf(href))
+            image_bytes = convert_pdf_to_image(get_pdf(href)).read()
+            title = _clean_link_text(link)
 
             if poster is None:
                 post_text = format_link_for_post(link)
                 print(f'Would have posted: "{post_text}"')
             else:
-                poster.post(link, image_buf)
+                poster.post(link, title, image_bytes)
 
             successes[href] = link.text
         except (KeyboardInterrupt, SystemExit):

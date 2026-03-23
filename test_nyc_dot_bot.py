@@ -1,3 +1,4 @@
+import io
 import random
 from unittest.mock import MagicMock, patch
 from urllib.parse import urljoin
@@ -25,7 +26,6 @@ from nyc_dot_bot import (
     parse_s3_path,
     post_new_links,
     run,
-    truncate_text_for_skeet,
 )
 
 
@@ -185,22 +185,6 @@ def test_format_link_for_post_truncates_long_text():
     assert text_part.endswith("...")
 
 
-# --- truncate_text_for_skeet ---
-
-
-def test_truncate_text_for_skeet_short():
-    link = make_link("https://example.com/a.pdf", "Project A (pdf)")
-    assert truncate_text_for_skeet(link) == "Project A"
-
-
-def test_truncate_text_for_skeet_truncates_long_text():
-    long_text = "B" * 350
-    link = make_link("https://example.com/a.pdf", long_text)
-    result = truncate_text_for_skeet(link)
-    assert len(result) == 299
-    assert result.endswith("...")
-
-
 # --- _default_s3_path ---
 
 
@@ -256,7 +240,7 @@ def test_make_poster_no_credentials_raises(monkeypatch):
 def test_post_new_links_no_poster_prints(mock_get_pdf, mock_convert, capsys):
     link = make_link("https://example.com/a.pdf", "Project A (pdf)")
     mock_get_pdf.return_value = b"pdf"
-    mock_convert.return_value = MagicMock()
+    mock_convert.return_value = io.BytesIO(b"jpegdata")
 
     result = post_new_links([link])
     assert result == {"https://example.com/a.pdf": "Project A (pdf)"}
@@ -268,13 +252,17 @@ def test_post_new_links_no_poster_prints(mock_get_pdf, mock_convert, capsys):
 def test_post_new_links_with_poster_calls_post(mock_get_pdf, mock_convert):
     link = make_link("https://example.com/a.pdf", "Project A")
     mock_get_pdf.return_value = b"pdf"
-    image_buf = MagicMock()
-    mock_convert.return_value = image_buf
+    mock_convert.return_value = io.BytesIO(b"jpegdata")
+
     poster = MagicMock()
 
     result = post_new_links([link], poster)
     assert result == {"https://example.com/a.pdf": "Project A"}
-    poster.post.assert_called_once_with(link, image_buf)
+    poster.post.assert_called_once()
+    posted_link, posted_title, posted_image = poster.post.call_args[0]
+    assert posted_link["href"] == "https://example.com/a.pdf"
+    assert posted_title == "Project A"
+    assert posted_image == b"jpegdata"
 
 
 @patch("nyc_dot_bot.convert_pdf_to_image")
@@ -283,7 +271,8 @@ def test_post_new_links_continues_after_failure(mock_get_pdf, mock_convert):
     link1 = make_link("https://example.com/a.pdf", "A")
     link2 = make_link("https://example.com/b.pdf", "B")
     mock_get_pdf.return_value = b"pdf"
-    mock_convert.return_value = MagicMock()
+    mock_convert.return_value = io.BytesIO(b"jpegdata")
+
     poster = MagicMock()
     poster.post.side_effect = [RuntimeError("fail"), None]
 
@@ -387,16 +376,18 @@ def test_run_no_post_writes_cache(mock_get_pdf_links, mock_get_html, mock_post, 
 # --- cli ---
 
 
+@patch("nyc_dot_bot.load_dotenv")
 @patch("nyc_dot_bot.run")
-def test_cli_post_with_cache_flag(mock_run):
+def test_cli_post_with_cache_flag(mock_run, _mock_dotenv):
     runner = CliRunner()
     result = runner.invoke(cli, ["post", "--cache", "/tmp/test.json", "--dry-run"])
     assert result.exit_code == 0
     mock_run.assert_called_once_with("/tmp/test.json", dry_run=True, no_post=False)
 
 
+@patch("nyc_dot_bot.load_dotenv")
 @patch("nyc_dot_bot.run")
-def test_cli_post_defaults_to_s3(mock_run, monkeypatch):
+def test_cli_post_defaults_to_s3(mock_run, _mock_dotenv, monkeypatch):
     monkeypatch.delenv("BUCKET_NAME", raising=False)
     runner = CliRunner()
     result = runner.invoke(cli, ["post", "--dry-run"])
