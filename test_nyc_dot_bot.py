@@ -22,6 +22,7 @@ from nyc_dot_bot import (
     format_link_for_post,
     get_html,
     get_pdf_links,
+    is_non_english,
     make_cache,
     parse_s3_path,
     post_new_links,
@@ -153,6 +154,43 @@ def test_find_new_links_too_many_raises():
         find_new_links(cached, current)
 
 
+# --- is_non_english ---
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Project - presented in June 2021 (Spanish pdf)",
+        "Project - presented in June 2021 (Spanish)",
+        "Project - presented in June 2021 (Simplified Chinese pdf)",
+        "Project - presented in June 2021 (Traditional Chinese)",
+        "Project - presented in June 2021 (Chinese Simplified)",
+        "Project - presented in June 2021 (French)",
+        "Project - presented in June 2021 (Greek pdf)",
+        "Project - presented in June 2021 (Hebrew)",
+        "Project - presented in June 2021 (Korean)",
+        "Project - presented in April 2023 (Arabic)",
+        "Project - presented in April 2023 (Chinese)",
+    ],
+)
+def test_is_non_english_positive(title):
+    assert is_non_english(title) is True
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Flatbush Avenue - presented to Brooklyn Community Board 14 in January 2023",
+        "31st Avenue - Street Design Checklist",
+        "Meeker Avenue - What's Happening Here Flyer",
+        "Brooklyn Waterfront Greenway Presentation",
+        "Flyer in English, Simplified Chinese, Spanish & Traditional Chinese",
+    ],
+)
+def test_is_non_english_negative(title):
+    assert is_non_english(title) is False
+
+
 # --- format_link_for_post ---
 
 
@@ -263,6 +301,26 @@ def test_post_new_links_with_poster_calls_post(mock_get_pdf, mock_convert):
     assert posted_link["href"] == "https://example.com/a.pdf"
     assert posted_title == "Project A"
     assert posted_image == b"jpegdata"
+
+
+@patch("nyc_dot_bot.convert_pdf_to_image")
+@patch("nyc_dot_bot.get_pdf")
+def test_post_new_links_skips_non_english(mock_get_pdf, mock_convert):
+    english = make_link("https://example.com/a.pdf", "Project A (pdf)")
+    spanish = make_link("https://example.com/a-spanish.pdf", "Project A (Spanish pdf)")
+    mock_get_pdf.return_value = b"pdf"
+    mock_convert.return_value = io.BytesIO(b"jpegdata")
+
+    poster = MagicMock()
+    result = post_new_links([english, spanish], poster)
+
+    # Both should be in the result (cached)
+    assert "https://example.com/a.pdf" in result
+    assert "https://example.com/a-spanish.pdf" in result
+    # But only the English one should have been posted
+    poster.post.assert_called_once()
+    posted_link = poster.post.call_args[0][0]
+    assert posted_link["href"] == "https://example.com/a.pdf"
 
 
 @patch("nyc_dot_bot.convert_pdf_to_image")

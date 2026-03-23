@@ -2,6 +2,7 @@ import copy
 import io
 import json
 import os
+import re
 import traceback
 from typing import Any, Protocol
 from urllib.parse import urljoin
@@ -210,6 +211,20 @@ def find_new_links(cached: CacheData, current_links: list[Tag]) -> list[Tag]:
     return new_links
 
 
+NON_ENGLISH_PATTERN = re.compile(
+    r"\("
+    r"(?:Spanish|Chinese|Simplified Chinese|Traditional Chinese|Chinese Simplified|Chinese Traditional"
+    r"|French|Greek|Hebrew|Korean|Arabic|Russian|Bengali|Haitian Creole|Urdu|Polish|Yiddish)"
+    r"(?:\s+pdf)?"
+    r"\)\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_non_english(title: str) -> bool:
+    return bool(NON_ENGLISH_PATTERN.search(title))
+
+
 def _clean_link_text(link: Tag) -> str:
     text = " ".join(link.text.split())
     return text.replace(" (pdf)", "")
@@ -232,8 +247,13 @@ def post_new_links(links: list[Tag], poster: PlatformPoster | None = None) -> di
     for link in links:
         try:
             href = str(link["href"])
-            image_bytes = convert_pdf_to_image(get_pdf(href)).read()
             title = _clean_link_text(link)
+
+            if is_non_english(title):
+                successes[href] = link.text
+                continue
+
+            image_bytes = convert_pdf_to_image(get_pdf(href)).read()
 
             if poster is None:
                 post_text = format_link_for_post(link)
