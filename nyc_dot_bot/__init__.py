@@ -23,6 +23,8 @@ current_projects_url = "https://www1.nyc.gov/html/dot/html/about/current-project
 
 DEFAULT_BUCKET = "nyc-dot-current-projects-bot-mastodon-staging"
 
+HEADERS = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0'"}
+
 
 def parse_s3_path(path: str) -> tuple[str, str]:
     """Split 's3://bucket/key' into (bucket, key)."""
@@ -161,7 +163,11 @@ class TooManyNewPDFsException(Exception):
 
 
 def get_html() -> requests.Response:
-    projects_html = requests.get(current_projects_url, timeout=30)
+    projects_html = requests.get(
+        current_projects_url,
+        timeout=30,
+        headers=HEADERS,
+    )
     projects_html.raise_for_status()
     projects_html.encoding = "utf-8"
     return projects_html
@@ -182,7 +188,7 @@ def get_pdf_links(projects_html: requests.Response) -> list[Tag]:
 
 
 def get_pdf(link: str) -> bytes:
-    r = requests.get(link, timeout=30)
+    r = requests.get(link, timeout=30, headers=HEADERS)
     r.raise_for_status()
     return r.content
 
